@@ -149,6 +149,49 @@ def test_browser_login_clicks_technicolor_sign_in_control() -> None:
     assert page.sign_in.clicked
 
 
+class FakeNavigationResponse:
+    def __init__(self, status: int):
+        self.status = status
+
+
+class FakeBodyLocator:
+    async def wait_for(self, **_: object) -> None:
+        return None
+
+
+class FakeDirectNavigationPage:
+    def __init__(self, dashboard_url: str):
+        self.url = dashboard_url
+        self.dashboard_url = dashboard_url
+        self.visited: list[str] = []
+
+    async def goto(self, url: str, **_: object) -> FakeNavigationResponse:
+        self.url = url
+        self.visited.append(url)
+        return FakeNavigationResponse(200 if url == self.dashboard_url else 404)
+
+    def locator(self, _selector: str) -> FakeBodyLocator:
+        return FakeBodyLocator()
+
+    async def wait_for_timeout(self, _timeout: int) -> None:
+        return None
+
+
+def test_browser_restores_dashboard_after_direct_pages_are_not_found() -> None:
+    adapter = BrowserRouterAdapter(app_settings(), "admin", "secret")
+    dashboard_url = "http://192.168.1.1/"
+    page = FakeDirectNavigationPage(dashboard_url)
+    adapter._page = page
+    adapter._dashboard_url = dashboard_url
+
+    found = asyncio.run(adapter._open_direct_dns_page())
+
+    assert found is False
+    assert page.url == dashboard_url
+    assert page.visited[-1] == dashboard_url
+    assert [attempt["status"] for attempt in adapter._compatibility_attempts] == [404, 404, 404]
+
+
 class FakeDnsOption:
     def __init__(self, value: str | None = None):
         self.value = value

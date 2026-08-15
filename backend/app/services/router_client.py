@@ -249,6 +249,8 @@ class BrowserRouterAdapter:
         self._browser: Any = None
         self._page: Any = None
         self._applied = False
+        self._dashboard_url: str | None = None
+        self._compatibility_attempts: list[dict[str, Any]] = []
 
     async def _visible(self, selector: str) -> Any | None:
         locator = self._page.locator(selector).first
@@ -355,6 +357,7 @@ class BrowserRouterAdapter:
                 await password.fill(self.password)
                 await self._click_login()
                 await self._wait_for_login_result()
+            self._dashboard_url = str(self._page.url)
             return True
         except RouterError:
             raise
@@ -428,7 +431,9 @@ class BrowserRouterAdapter:
                 }"""
             )
             if opened:
-                await self._page.wait_for_timeout(500)
+                # Su alcuni TIM HUB il template della modale viene generato dal
+                # router e può richiedere diversi secondi prima di entrare nel DOM.
+                await self._page.wait_for_timeout(1000)
                 return True
         except Exception:
             pass
@@ -457,14 +462,20 @@ class BrowserRouterAdapter:
             "/modals/lan-modal.lp",
         )
         timeout = int(max(self.settings.router_timeout, 15.0) * 1000)
+        return_url = self._dashboard_url or str(self._page.url)
         for path in paths:
+            attempt: dict[str, Any] = {"kind": "direct_page", "path": path}
             try:
                 response = await self._page.goto(
                     urljoin(self.settings.router_url + "/", path.lstrip("/")),
                     wait_until="commit",
                     timeout=timeout,
                 )
+                attempt["status"] = response.status if response is not None else None
+                attempt["final_url"] = str(self._page.url).split("?", 1)[0]
                 if response is not None and response.status >= 400:
+                    attempt["result"] = "http_error"
+                    self._compatibility_attempts.append(attempt)
                     continue
                 await self._page.locator("body").wait_for(state="attached", timeout=timeout)
                 await self._page.wait_for_timeout(500)
@@ -475,64 +486,89 @@ class BrowserRouterAdapter:
                     'input[name="primary_dns"], select[name="primary_dns"]'
                 ).first
                 if not await known.count():
+                    attempt["result"] = "dns_control_absent"
+                    attempt["title"] = await self._page.title()
+                    self._compatibility_attempts.append(attempt)
                     continue
 
                 # A modal fragment opened as a full page can retain Bootstrap's
                 # display:none. Reveal only the DNS control and its ancestors.
                 await self._reveal_element(known)
                 if await known.is_visible():
+                    attempt["result"] = "dns_control_found"
+                    self._compatibility_attempts.append(attempt)
                     return True
-            except Exception:
+                attempt["result"] = "dns_control_hidden"
+                self._compatibility_attempts.append(attempt)
+            except Exception as exc:
+                attempt["result"] = "navigation_error"
+                attempt["error_type"] = type(exc).__name__
+                self._compatibility_attempts.append(attempt)
                 continue
+        # Fondamentale: i percorsi sopra sono tentativi di compatibilità. Se non
+        # funzionano, non dobbiamo lasciare Playwright sull'ultima pagina 404,
+        # altrimenti la successiva ricerca della card Rete locale fallisce sempre.
+        try:
+            await self._page.goto(return_url, wait_until="commit", timeout=timeout)
+            await self._page.locator("body").wait_for(state="attached", timeout=timeout)
+            await self._page.wait_for_timeout(500)
+        except Exception as exc:
+            self._compatibility_attempts.append(
+                {"kind": "dashboard_restore", "result": "error", "error_type": type(exc).__name__}
+            )
         return False
+
+    async def _document_diagnostic(self) -> dict[str, Any]:
+        """Return structural DOM metadata, deliberately excluding control values."""
+        document = await self._page.evaluate(
+            """() => {
+                const visible = element => !!(element.offsetWidth || element.offsetHeight ||
+                                               element.getClientRects().length);
+                const controls = [...document.querySelectorAll('input, select, textarea, button')]
+                    .slice(0, 250)
+                    .map(element => {
+                        const label = element.id
+                            ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`)
+                            : element.closest('.control-group, .form-group')?.querySelector('label');
+                        return {
+                            tag: element.tagName.toLowerCase(),
+                            type: element.getAttribute('type'),
+                            name: element.getAttribute('name'),
+                            id: element.id || null,
+                            aria_label: element.getAttribute('aria-label'),
+                            placeholder: element.getAttribute('placeholder'),
+                            label: label?.textContent?.trim().slice(0, 120) || null,
+                            visible: visible(element),
+                            disabled: element.disabled === true
+                        };
+                    });
+                const launchers = [...document.querySelectorAll('[data-remote], [data-id], a[href]')]
+                    .slice(0, 250)
+                    .map(element => ({
+                        tag: element.tagName.toLowerCase(),
+                        id: element.id || null,
+                        data_remote: element.getAttribute('data-remote'),
+                        data_id: element.getAttribute('data-id'),
+                        href: element.getAttribute('href'),
+                        title: element.getAttribute('title'),
+                        aria_label: element.getAttribute('aria-label')
+                    }));
+                return {
+                    url: `${location.origin}${location.pathname}`,
+                    title: document.title,
+                    controls,
+                    launchers
+                };
+            }"""
+        )
+        document["frames"] = [str(frame.url).split("?", 1)[0] for frame in self._page.frames]
+        return document
 
     async def _write_compatibility_diagnostic(self) -> str | None:
         """Persist structural DOM metadata without field values or page text."""
         try:
-            document = await self._page.evaluate(
-                """() => {
-                    const visible = element => !!(element.offsetWidth || element.offsetHeight ||
-                                                   element.getClientRects().length);
-                    const controls = [...document.querySelectorAll('input, select, textarea, button')]
-                        .slice(0, 250)
-                        .map(element => {
-                            const label = element.id
-                                ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`)
-                                : element.closest('.control-group, .form-group')?.querySelector('label');
-                            return {
-                                tag: element.tagName.toLowerCase(),
-                                type: element.getAttribute('type'),
-                                name: element.getAttribute('name'),
-                                id: element.id || null,
-                                aria_label: element.getAttribute('aria-label'),
-                                placeholder: element.getAttribute('placeholder'),
-                                label: label?.textContent?.trim().slice(0, 120) || null,
-                                visible: visible(element),
-                                disabled: element.disabled === true
-                            };
-                        });
-                    const launchers = [...document.querySelectorAll('[data-remote], [data-id], a[href]')]
-                        .slice(0, 250)
-                        .map(element => ({
-                            tag: element.tagName.toLowerCase(),
-                            id: element.id || null,
-                            data_remote: element.getAttribute('data-remote'),
-                            data_id: element.getAttribute('data-id'),
-                            href: element.getAttribute('href'),
-                            title: element.getAttribute('title'),
-                            aria_label: element.getAttribute('aria-label')
-                        }));
-                    return {
-                        url: `${location.origin}${location.pathname}`,
-                        title: document.title,
-                        controls,
-                        launchers
-                    };
-                }"""
-            )
-            document["frames"] = [
-                str(frame.url).split("?", 1)[0] for frame in self._page.frames
-            ]
+            document = await self._document_diagnostic()
+            document["attempts"] = self._compatibility_attempts
             path = ensure_work_dirs()["logs"] / "router-diagnostic.json"
             path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
             return str(path)
