@@ -1,0 +1,15 @@
+.git
+.agents
+.codex
+.venv
+build
+dist
+Codex_Work
+tests
+frontend/node_modules
+frontend/dist
+Docker/data
+*.pyc
+__pycache__
+*.log
+*.zip
