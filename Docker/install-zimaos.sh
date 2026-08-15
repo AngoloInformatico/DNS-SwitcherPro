@@ -29,6 +29,29 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "Creato $ENV_FILE con un token casuale."
 fi
 
+# Su ZimaOS l'utente SSH può vedere il comando Docker senza avere accesso al
+# socket del daemon. In quel caso eleviamo soltanto la fase di installazione.
+if DOCKER_INFO_OUTPUT=$(docker info 2>&1); then
+  :
+else
+  case "$DOCKER_INFO_OUTPUT" in
+    *"permission denied"*)
+      if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        echo "Docker richiede privilegi amministrativi su questo ZimaOS."
+        echo "Rilancio tramite sudo; inserire la password dell'utente se richiesta."
+        exec sudo sh "$0"
+      fi
+      ;;
+  esac
+
+  echo "Errore: impossibile accedere al daemon Docker." >&2
+  echo "$DOCKER_INFO_OUTPUT" >&2
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "Eseguire prima 'sudo -i' e ripetere l'installazione." >&2
+  fi
+  exit 1
+fi
+
 cd "$SCRIPT_DIR"
 
 # ZimaOS può fornire Docker Compose come plugin moderno (`docker compose`) o

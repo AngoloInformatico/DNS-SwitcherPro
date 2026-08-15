@@ -26,6 +26,8 @@ Il bootstrap scarica o aggiorna il repository GitHub nella cartella
 pubblicato da GitHub tramite `curl` o `wget`.
 
 Al termine mostra l'indirizzo completo della dashboard con il token iniziale.
+Se l'utente SSH non può accedere al socket Docker, lo script si rilancia
+automaticamente tramite `sudo` e può chiedere la password dell'utente ZimaOS.
 
 ## Installazione da una copia locale
 
