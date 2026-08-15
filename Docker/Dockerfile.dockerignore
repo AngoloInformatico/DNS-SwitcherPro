@@ -11,6 +11,7 @@ frontend/dist
 Docker/data
 Docker/.env
 Docker/.docker-compose.compat.yml
+Docker/.docker-cli
 *.pyc
 __pycache__
 *.log

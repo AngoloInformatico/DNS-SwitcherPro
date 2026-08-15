@@ -49,6 +49,17 @@ elif command -v docker-compose >/dev/null 2>&1; then
 else
   echo "Docker Compose non è disponibile: avvio tramite Docker standard."
 
+  # Alcune installazioni ZimaOS espongono in HOME un config.json di sistema
+  # non leggibile dall'utente del terminale. Per immagini pubbliche non serve:
+  # usiamo una configurazione locale vuota ed evitiamo il relativo warning.
+  if [ -z "${DOCKER_CONFIG:-}" ] && [ -n "${HOME:-}" ] && \
+     [ -e "$HOME/.docker/config.json" ] && [ ! -r "$HOME/.docker/config.json" ]; then
+    DOCKER_CONFIG="$SCRIPT_DIR/.docker-cli"
+    export DOCKER_CONFIG
+    mkdir -p "$DOCKER_CONFIG"
+    chmod 700 "$DOCKER_CONFIG"
+  fi
+
   PORT=$(sed -n 's/^DNS_SWITCHER_PORT=//p' "$ENV_FILE" | tail -n 1)
   TOKEN=$(sed -n 's/^DNS_SWITCHER_SESSION_TOKEN=//p' "$ENV_FILE" | tail -n 1)
   DATA_PATH=$(sed -n 's/^DNS_SWITCHER_DATA_PATH=//p' "$ENV_FILE" | tail -n 1)
@@ -77,12 +88,59 @@ else
 
   mkdir -p "$DATA_PATH"
 
-  docker build \
-    --file "$SCRIPT_DIR/Dockerfile" \
-    --tag "$IMAGE_NAME" \
-    "$PROJECT_DIR"
+  echo "Client rilevato: $(docker --version 2>/dev/null || echo 'versione non disponibile')"
 
-  if docker ps -a --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+  if docker buildx version >/dev/null 2>&1; then
+    BUILD_VARIANT=buildx
+  elif docker builder build --help >/dev/null 2>&1; then
+    BUILD_VARIANT=builder
+  else
+    BUILD_VARIANT=classic
+  fi
+
+  run_docker_build() {
+    case "$BUILD_VARIANT" in
+      buildx) docker buildx build --load "$@" ;;
+      builder) docker builder build "$@" ;;
+      *) docker build "$@" ;;
+    esac
+  }
+  echo "Metodo di build: $BUILD_VARIANT"
+
+  # Le forme brevi -f e -t funzionano con i client Docker legacy. Se il client
+  # ZimaOS non espone neppure -f, viene usato temporaneamente il nome Dockerfile
+  # predefinito nella radice del contesto, senza lasciare file nel repository.
+  if run_docker_build --help 2>&1 | \
+     grep -E -e '(^|[[:space:]])-f([,[:space:]]|$)|--file' >/dev/null; then
+    run_docker_build -f "$SCRIPT_DIR/Dockerfile" -t "$IMAGE_NAME" "$PROJECT_DIR"
+  else
+    TEMP_DOCKERFILE="$PROJECT_DIR/Dockerfile"
+    if [ -e "$TEMP_DOCKERFILE" ]; then
+      echo "Errore: esiste già $TEMP_DOCKERFILE; impossibile preparare il fallback di build." >&2
+      exit 1
+    fi
+
+    echo "Il client non accetta -f: secondo tentativo con il Dockerfile predefinito..."
+    cp "$SCRIPT_DIR/Dockerfile" "$TEMP_DOCKERFILE"
+    cleanup_temp_dockerfile() {
+      rm -f "$TEMP_DOCKERFILE"
+    }
+    trap cleanup_temp_dockerfile 0 1 2 15
+
+    if run_docker_build -t "$IMAGE_NAME" "$PROJECT_DIR"; then
+      BUILD_RESULT=0
+    else
+      BUILD_RESULT=$?
+    fi
+
+    cleanup_temp_dockerfile
+    trap - 0 1 2 15
+    if [ "$BUILD_RESULT" -ne 0 ]; then
+      exit "$BUILD_RESULT"
+    fi
+  fi
+
+  if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     echo "Sostituzione del container esistente..."
     docker rm -f "$CONTAINER_NAME" >/dev/null
   fi

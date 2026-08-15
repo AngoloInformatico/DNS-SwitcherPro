@@ -43,7 +43,8 @@ nel browser e rimosso dalla barra degli indirizzi.
 
 Non è obbligatorio avere Docker Compose: se ZimaOS espone soltanto il comando
 `docker`, lo script costruisce e avvia automaticamente il container tramite
-`docker build` e `docker run`.
+`docker build` e `docker run`. Sono supportati anche i client Docker legacy che
+accettano soltanto le forme brevi di alcune opzioni.
 
 ## Installazione manuale
 
