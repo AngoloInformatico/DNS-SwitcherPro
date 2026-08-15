@@ -15,6 +15,10 @@ mkdir -p "$(dirname "$INSTALL_DIR")"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Aggiornamento del progetto da GitHub..."
+  # Il progetto può essere stato avviato in precedenza con chmod +x. Su alcuni
+  # filesystem ZimaOS Git considera il solo bit eseguibile una modifica locale
+  # e blocca il pull. Il contenuto continua invece a essere verificato.
+  git -C "$INSTALL_DIR" config core.fileMode false
   git -C "$INSTALL_DIR" pull --ff-only
 elif [ -e "$INSTALL_DIR" ]; then
   echo "Errore: $INSTALL_DIR esiste già ma non è un repository Git." >&2
@@ -44,5 +48,4 @@ if [ ! -f "$INSTALL_DIR/Docker/install-zimaos.sh" ]; then
   exit 1
 fi
 
-chmod +x "$INSTALL_DIR/Docker/install-zimaos.sh"
-exec "$INSTALL_DIR/Docker/install-zimaos.sh"
+exec sh "$INSTALL_DIR/Docker/install-zimaos.sh"

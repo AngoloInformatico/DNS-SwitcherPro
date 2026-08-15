@@ -170,8 +170,7 @@ Installazione da una copia locale già presente su ZimaOS:
 
 ```sh
 cd /DATA/AppData/dns-switcher-pro-source
-chmod +x Docker/install-zimaos.sh
-./Docker/install-zimaos.sh
+sh Docker/install-zimaos.sh
 ```
 
 Lo script genera un token casuale, costruisce l'immagine e mostra l'indirizzo da

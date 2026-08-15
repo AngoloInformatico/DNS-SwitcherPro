@@ -31,11 +31,10 @@ Al termine mostra l'indirizzo completo della dashboard con il token iniziale.
 
 1. Copiare **l'intero progetto**, non soltanto questa cartella, sullo ZimaOS.
 2. Aprire il terminale di ZimaOS e posizionarsi nella cartella del progetto.
-3. Rendere eseguibile e avviare lo script:
+3. Avviare lo script tramite la shell:
 
    ```sh
-   chmod +x Docker/install-zimaos.sh
-   ./Docker/install-zimaos.sh
+   sh Docker/install-zimaos.sh
    ```
 
 Lo script crea `Docker/.env`, genera un token casuale, compila l'immagine e
