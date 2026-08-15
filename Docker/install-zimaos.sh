@@ -2,7 +2,10 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 ENV_FILE="$SCRIPT_DIR/.env"
+IMAGE_NAME=dns-switcher-pro:1.1.3-zimaos
+CONTAINER_NAME=dns-switcher-pro
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Errore: Docker non è disponibile su questo sistema." >&2
@@ -44,8 +47,61 @@ elif command -v docker-compose >/dev/null 2>&1; then
   fi
   docker-compose -f "$COMPOSE_FILE" up -d --build
 else
-  echo "Errore: Docker Compose non è disponibile (né 'docker compose' né 'docker-compose')." >&2
-  exit 1
+  echo "Docker Compose non è disponibile: avvio tramite Docker standard."
+
+  PORT=$(sed -n 's/^DNS_SWITCHER_PORT=//p' "$ENV_FILE" | tail -n 1)
+  TOKEN=$(sed -n 's/^DNS_SWITCHER_SESSION_TOKEN=//p' "$ENV_FILE" | tail -n 1)
+  DATA_PATH=$(sed -n 's/^DNS_SWITCHER_DATA_PATH=//p' "$ENV_FILE" | tail -n 1)
+  TIMEZONE=$(sed -n 's/^TZ=//p' "$ENV_FILE" | tail -n 1)
+  PORT=${PORT:-8765}
+  DATA_PATH=${DATA_PATH:-/DATA/AppData/dns-switcher-pro}
+  TIMEZONE=${TIMEZONE:-Europe/Rome}
+
+  case "$PORT" in
+    ''|*[!0-9]*)
+      echo "Errore: DNS_SWITCHER_PORT deve essere un numero valido." >&2
+      exit 1
+      ;;
+  esac
+  if [ -z "$TOKEN" ]; then
+    echo "Errore: DNS_SWITCHER_SESSION_TOKEN non è configurato in $ENV_FILE." >&2
+    exit 1
+  fi
+  case "$DATA_PATH" in
+    /*) ;;
+    *)
+      echo "Errore: DNS_SWITCHER_DATA_PATH deve essere un percorso assoluto." >&2
+      exit 1
+      ;;
+  esac
+
+  mkdir -p "$DATA_PATH"
+
+  docker build \
+    --file "$SCRIPT_DIR/Dockerfile" \
+    --tag "$IMAGE_NAME" \
+    "$PROJECT_DIR"
+
+  if docker ps -a --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+    echo "Sostituzione del container esistente..."
+    docker rm -f "$CONTAINER_NAME" >/dev/null
+  fi
+
+  docker run -d \
+    --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
+    --init \
+    --ipc host \
+    --publish "${PORT}:8765" \
+    --env DNS_SWITCHER_CONTAINER=1 \
+    --env DNS_SWITCHER_WORK_DIR=/data \
+    --env DNS_SWITCHER_ALLOWED_HOSTS='*' \
+    --env "DNS_SWITCHER_SESSION_TOKEN=$TOKEN" \
+    --env "TZ=$TIMEZONE" \
+    --volume "${DATA_PATH}:/data" \
+    --security-opt no-new-privileges:true \
+    --label it.alexlignola.dnsswitcherpro.managed=true \
+    "$IMAGE_NAME" >/dev/null
 fi
 
 PORT=$(sed -n 's/^DNS_SWITCHER_PORT=//p' "$ENV_FILE" | tail -n 1)

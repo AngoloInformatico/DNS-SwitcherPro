@@ -41,6 +41,10 @@ Lo script crea `Docker/.env`, genera un token casuale, compila l'immagine e
 mostra l'indirizzo completo da aprire. Al primo accesso il token viene salvato
 nel browser e rimosso dalla barra degli indirizzi.
 
+Non è obbligatorio avere Docker Compose: se ZimaOS espone soltanto il comando
+`docker`, lo script costruisce e avvia automaticamente il container tramite
+`docker build` e `docker run`.
+
 ## Installazione manuale
 
 ```sh
@@ -100,7 +104,17 @@ docker compose -f docker-compose.yml down
 ```
 
 Se ZimaOS espone il comando storico, sostituire `docker compose` con
-`docker-compose`. Lo script automatico rileva autonomamente quale variante usare.
+`docker-compose`. Lo script automatico rileva autonomamente quale variante usare
+e, quando Compose non è installato, usa direttamente Docker.
+
+Con l'avvio tramite Docker standard, i comandi equivalenti più utili sono:
+
+```sh
+docker ps --filter name=dns-switcher-pro
+docker logs -f dns-switcher-pro
+docker restart dns-switcher-pro
+docker stop dns-switcher-pro
+```
 
 ## Differenza rispetto alla versione Windows
 
