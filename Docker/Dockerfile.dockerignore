@@ -9,6 +9,8 @@ tests
 frontend/node_modules
 frontend/dist
 Docker/data
+Docker/.env
+Docker/.docker-compose.compat.yml
 *.pyc
 __pycache__
 *.log

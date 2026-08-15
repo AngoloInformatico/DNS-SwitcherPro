@@ -48,7 +48,8 @@ cp Docker/.env.example Docker/.env
 # Generare un token (lo script automatico non richiede openssl):
 TOKEN="$(tr -d '-' < /proc/sys/kernel/random/uuid)$(tr -d '-' < /proc/sys/kernel/random/uuid)"
 sed -i "s/CAMBIA-QUESTO-TOKEN-CON-ALMENO-32-CARATTERI/$TOKEN/" Docker/.env
-docker compose --env-file Docker/.env -f Docker/docker-compose.yml up -d --build
+cd Docker
+docker compose -f docker-compose.yml up -d --build
 ```
 
 Aprire quindi:
@@ -82,18 +83,24 @@ pubblicare la porta 8765 su Internet e non condividere il token.
 ## Comandi utili
 
 ```sh
+# Entrare nella cartella: Compose carica automaticamente .env
+cd Docker
+
 # Stato
-docker compose --env-file Docker/.env -f Docker/docker-compose.yml ps
+docker compose -f docker-compose.yml ps
 
 # Log
-docker compose --env-file Docker/.env -f Docker/docker-compose.yml logs -f
+docker compose -f docker-compose.yml logs -f
 
 # Aggiornamento dopo modifiche ai sorgenti
-docker compose --env-file Docker/.env -f Docker/docker-compose.yml up -d --build
+docker compose -f docker-compose.yml up -d --build
 
 # Arresto senza cancellare i dati
-docker compose --env-file Docker/.env -f Docker/docker-compose.yml down
+docker compose -f docker-compose.yml down
 ```
+
+Se ZimaOS espone il comando storico, sostituire `docker compose` con
+`docker-compose`. Lo script automatico rileva autonomamente quale variante usare.
 
 ## Differenza rispetto alla versione Windows
 
