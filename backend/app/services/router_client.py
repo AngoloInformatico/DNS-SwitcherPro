@@ -157,7 +157,7 @@ class HttpRouterAdapter:
         soup = BeautifulSoup(html, "html.parser")
         for form in soup.find_all("form"):
             values = self._form_values(form)
-            for field in form.find_all("input"):
+            for field in form.find_all(["input", "select"]):
                 identity = " ".join(
                     str(field.get(key, "")) for key in ("name", "id", "aria-label", "placeholder")
                 )
@@ -166,7 +166,11 @@ class HttpRouterAdapter:
                 name = field.get("name")
                 if not name:
                     continue
-                raw_value = str(field.get("value", "")).strip()
+                if field.name == "select":
+                    selected = field.find("option", selected=True) or field.find("option")
+                    raw_value = str(selected.get("value", "") if selected else "").strip()
+                else:
+                    raw_value = str(field.get("value", "")).strip()
                 current = None
                 if raw_value:
                     try:
@@ -356,6 +360,16 @@ class BrowserRouterAdapter:
             raise RouterError(mask_secrets(f"Automazione Edge non riuscita: {exc}", (self.password,))) from exc
 
     async def _find_dns_input(self) -> Any | None:
+        # TIM HUB / Technicolor usa a seconda del firmware un input testuale o
+        # un menu che diventa un input dopo aver scelto l'opzione "custom".
+        known = self._page.locator(
+            'input[name="dns_v4_pri"], select[name="dns_v4_pri"], '
+            'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], '
+            'input[name="primary_dns"], select[name="primary_dns"]'
+        ).first
+        if await known.count() and await known.is_visible():
+            return known
+
         label_pattern = re.compile(
             r"(?:server\s+dns|dns\s+server|primary\s+dns|dns\s+primar|dns\s+preferenz|local\s+dns)",
             re.I,
@@ -364,9 +378,11 @@ class BrowserRouterAdapter:
         if await locator.count() and await locator.is_visible():
             return locator
 
-        inputs = self._page.locator('input:not([type="hidden"]):not([type="password"])')
-        for index in range(min(await inputs.count(), 120)):
-            field = inputs.nth(index)
+        controls = self._page.locator(
+            'input:not([type="hidden"]):not([type="password"]), select'
+        )
+        for index in range(min(await controls.count(), 160)):
+            field = controls.nth(index)
             if not await field.is_visible():
                 continue
             identity = await field.evaluate(
@@ -380,6 +396,41 @@ class BrowserRouterAdapter:
             if "dns" in lowered and not any(word in lowered for word in ("ipv6", "ddns", "dynamic")):
                 return field
         return None
+
+    async def _open_technicolor_lan_modal(self) -> bool:
+        """Open the known Technicolor LAN modal without depending on its translation."""
+        launchers = self._page.locator(
+            '[data-remote*="ethernet-modal.lp"], '
+            '[data-id*="ethernet-modal"], '
+            'a[href*="ethernet-modal.lp"]'
+        )
+        for index in range(min(await launchers.count(), 8)):
+            launcher = launchers.nth(index)
+            if not await launcher.is_visible():
+                continue
+            try:
+                await launcher.click(timeout=3000)
+                await self._page.wait_for_timeout(500)
+                return True
+            except Exception:
+                continue
+
+        # Nelle dashboard Technicolor la funzione globale tch.loadModal carica
+        # lo stesso pannello anche quando il collegamento della card è nascosto.
+        try:
+            opened = await self._page.evaluate(
+                """() => {
+                    if (!window.tch || typeof window.tch.loadModal !== 'function') return false;
+                    window.tch.loadModal('modals/ethernet-modal.lp');
+                    return true;
+                }"""
+            )
+            if opened:
+                await self._page.wait_for_timeout(500)
+                return True
+        except Exception:
+            pass
+        return False
 
     async def _wait_for_dns_input(self, timeout: float) -> Any | None:
         deadline = asyncio.get_running_loop().time() + timeout
@@ -397,6 +448,22 @@ class BrowserRouterAdapter:
 
         # TIM HUB / Technicolor AGTHP: the DNS field lives in the asynchronous
         # "Rete Locale" modal and only appears after expanding advanced options.
+        if await self._open_technicolor_lan_modal():
+            found = await self._wait_for_dns_input(min(self.settings.router_timeout, 8.0))
+            if found is not None:
+                return found
+            advanced = self._page.get_by_text(
+                re.compile(r"(mostra opzioni avanzate|show advanced options)", re.I)
+            ).first
+            if await advanced.count() and await advanced.is_visible():
+                try:
+                    await advanced.click(timeout=3000)
+                    found = await self._wait_for_dns_input(self.settings.router_timeout)
+                    if found is not None:
+                        return found
+                except Exception:
+                    pass
+
         for lan_title in (r"rete locale", r"local network"):
             lan = self._page.get_by_text(re.compile(rf"^\s*{lan_title}\s*$", re.I)).first
             if not await lan.count() or not await lan.is_visible():
@@ -457,10 +524,39 @@ class BrowserRouterAdapter:
         except ValueError:
             return None
 
+    async def _set_dns_control_value(self, field: Any, address: str) -> Any:
+        """Set an IPv4 value on either a text input or Technicolor's DNS select."""
+        tag_name = str(await field.evaluate("element => element.tagName.toLowerCase()"))
+        if tag_name == "select":
+            field_name = str(await field.get_attribute("name") or "dns_v4_pri")
+            matching_option = field.locator(f'option[value="{address}"]')
+            if await matching_option.count():
+                await field.select_option(value=address)
+            else:
+                custom_option = field.locator(
+                    'option[value="custom"], option[value="manual"], option[value="static"]'
+                ).first
+                if not await custom_option.count():
+                    raise RouterCompatibilityError(
+                        "Il menu DNS del router non permette un indirizzo personalizzato"
+                    )
+                custom_value = await custom_option.get_attribute("value")
+                await field.select_option(value=str(custom_value))
+                replacement = self._page.locator(
+                    f'input[name="{field_name}"]:not([type="hidden"])'
+                ).first
+                await replacement.wait_for(
+                    state="visible", timeout=int(max(self.settings.router_timeout, 5.0) * 1000)
+                )
+                field = replacement
+                await field.fill(address)
+        else:
+            await field.fill(address)
+        return field
+
     async def set_dns(self, dns_ip: str) -> bool:
         address = validate_ipv4(dns_ip)
-        field = await self._dns_input()
-        await field.fill(address)
+        field = await self._set_dns_control_value(await self._dns_input(), address)
         await field.press("Tab")
         apply_button = self._page.locator("#save-config").first
         if await apply_button.count():

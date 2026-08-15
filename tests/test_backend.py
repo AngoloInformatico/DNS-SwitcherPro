@@ -91,6 +91,25 @@ def test_javascript_login_falls_back_to_browser() -> None:
         asyncio.run(adapter.client.aclose())
 
 
+def test_http_adapter_recognizes_technicolor_dns_select() -> None:
+    html = """
+    <form action="/modals/ethernet-modal.lp" method="post">
+      <select name="dns_v4_pri">
+        <option value="">Router</option>
+        <option value="192.168.1.2" selected>Custom (192.168.1.2)</option>
+      </select>
+    </form>
+    """
+    adapter = HttpRouterAdapter(app_settings(), "admin", "secret")
+    try:
+        form = adapter._extract_dns_form("http://192.168.1.1/modals/ethernet-modal.lp", html)
+        assert form is not None
+        assert form.field_name == "dns_v4_pri"
+        assert form.current_value == "192.168.1.2"
+    finally:
+        asyncio.run(adapter.client.aclose())
+
+
 class FakeLocator:
     def __init__(self, visible: bool = False):
         self.visible = visible
@@ -128,6 +147,80 @@ def test_browser_login_clicks_technicolor_sign_in_control() -> None:
     adapter._page = page
     asyncio.run(adapter._click_login())
     assert page.sign_in.clicked
+
+
+class FakeDnsOption:
+    def __init__(self, value: str | None = None):
+        self.value = value
+
+    @property
+    def first(self) -> "FakeDnsOption":
+        return self
+
+    async def count(self) -> int:
+        return int(self.value is not None)
+
+    async def get_attribute(self, name: str) -> str | None:
+        return self.value if name == "value" else None
+
+
+class FakeDnsInput:
+    def __init__(self) -> None:
+        self.value = ""
+        self.tab_pressed = False
+
+    @property
+    def first(self) -> "FakeDnsInput":
+        return self
+
+    async def wait_for(self, **_: object) -> None:
+        return None
+
+    async def fill(self, value: str) -> None:
+        self.value = value
+
+    async def press(self, key: str) -> None:
+        self.tab_pressed = key == "Tab"
+
+
+class FakeDnsSelect:
+    def __init__(self) -> None:
+        self.selected = ""
+
+    async def evaluate(self, _script: str) -> str:
+        return "select"
+
+    async def get_attribute(self, name: str) -> str | None:
+        return "dns_v4_pri" if name == "name" else None
+
+    def locator(self, selector: str) -> FakeDnsOption:
+        if 'value="custom"' in selector:
+            return FakeDnsOption("custom")
+        return FakeDnsOption()
+
+    async def select_option(self, *, value: str) -> None:
+        self.selected = value
+
+
+class FakeDnsPage:
+    def __init__(self, replacement: FakeDnsInput):
+        self.replacement = replacement
+
+    def locator(self, _selector: str) -> FakeDnsInput:
+        return self.replacement
+
+
+def test_browser_dns_select_switches_to_custom_input() -> None:
+    adapter = BrowserRouterAdapter(app_settings(), "admin", "secret")
+    replacement = FakeDnsInput()
+    adapter._page = FakeDnsPage(replacement)
+    select = FakeDnsSelect()
+
+    resulting_field = asyncio.run(adapter._set_dns_control_value(select, "192.168.1.2"))
+
+    assert select.selected == "custom"
+    assert resulting_field is replacement
+    assert replacement.value == "192.168.1.2"
 
 
 def test_connection_payload_validates_draft_address() -> None:
