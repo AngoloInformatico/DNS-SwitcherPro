@@ -110,6 +110,26 @@ def test_http_adapter_recognizes_technicolor_dns_select() -> None:
         asyncio.run(adapter.client.aclose())
 
 
+def test_http_adapter_recognizes_tim_dns_server_field() -> None:
+    html = """
+    <form action="/modals/ethernet-modal.lp?intf=lan" method="post">
+      <input type="hidden" name="ipChanged" value="0">
+      <input type="text" name="dnsServer" value="192.168.1.2">
+      <input type="hidden" name="isAdvanced" value="1">
+    </form>
+    """
+    adapter = HttpRouterAdapter(app_settings(), "admin", "secret")
+    try:
+        form = adapter._extract_dns_form(
+            "http://192.168.1.1/modals/ethernet-modal.lp?intf=lan", html
+        )
+        assert form is not None
+        assert form.field_name == "dnsServer"
+        assert form.current_value == "192.168.1.2"
+    finally:
+        asyncio.run(adapter.client.aclose())
+
+
 class FakeLocator:
     def __init__(self, visible: bool = False):
         self.visible = visible

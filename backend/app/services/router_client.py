@@ -371,7 +371,8 @@ class BrowserRouterAdapter:
         known = self._page.locator(
             'input[name="dns_v4_pri"], select[name="dns_v4_pri"], '
             'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], '
-            'input[name="primary_dns"], select[name="primary_dns"]'
+            'input[name="primary_dns"], select[name="primary_dns"], '
+            'input[name="dnsServer"], select[name="dnsServer"], textarea[name="dnsServer"]'
         ).first
         if await known.count() and await known.is_visible():
             return known
@@ -492,7 +493,9 @@ class BrowserRouterAdapter:
                         const selector = [
                             'input[name="dns_v4_pri"]', 'select[name="dns_v4_pri"]',
                             'input[name="ipv4_dns_pri"]', 'select[name="ipv4_dns_pri"]',
-                            'input[name="primary_dns"]', 'select[name="primary_dns"]'
+                            'input[name="primary_dns"]', 'select[name="primary_dns"]',
+                            'input[name="dnsServer"]', 'select[name="dnsServer"]',
+                            'textarea[name="dnsServer"]'
                         ].join(',');
                         const hasDnsControl = !!parsed.querySelector(selector);
                         if (response.ok && hasDnsControl) {
@@ -531,7 +534,10 @@ class BrowserRouterAdapter:
                 '#dns-switcher-lan-fragment input[name="ipv4_dns_pri"], '
                 '#dns-switcher-lan-fragment select[name="ipv4_dns_pri"], '
                 '#dns-switcher-lan-fragment input[name="primary_dns"], '
-                '#dns-switcher-lan-fragment select[name="primary_dns"]'
+                '#dns-switcher-lan-fragment select[name="primary_dns"], '
+                '#dns-switcher-lan-fragment input[name="dnsServer"], '
+                '#dns-switcher-lan-fragment select[name="dnsServer"], '
+                '#dns-switcher-lan-fragment textarea[name="dnsServer"]'
             ).first
             await self._reveal_element(known)
             self._injected_dns_fragment = await known.is_visible()
@@ -576,7 +582,8 @@ class BrowserRouterAdapter:
                         const hasDnsControl = !!parsed.querySelector(
                             'input[name="dns_v4_pri"], select[name="dns_v4_pri"], ' +
                             'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], ' +
-                            'input[name="primary_dns"], select[name="primary_dns"]'
+                            'input[name="primary_dns"], select[name="primary_dns"], ' +
+                            'input[name="dnsServer"], select[name="dnsServer"], textarea[name="dnsServer"]'
                         );
                         if (response.ok && hasDnsControl) host.innerHTML = html;
                         return {ok: response.ok, status: response.status, has_dns_control: hasDnsControl};
@@ -628,7 +635,8 @@ class BrowserRouterAdapter:
                 known = self._page.locator(
                     'input[name="dns_v4_pri"], select[name="dns_v4_pri"], '
                     'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], '
-                    'input[name="primary_dns"], select[name="primary_dns"]'
+                    'input[name="primary_dns"], select[name="primary_dns"], '
+                    'input[name="dnsServer"], select[name="dnsServer"], textarea[name="dnsServer"]'
                 ).first
                 if not await known.count():
                     attempt["result"] = "dns_control_absent"
