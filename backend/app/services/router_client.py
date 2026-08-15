@@ -251,6 +251,7 @@ class BrowserRouterAdapter:
         self._applied = False
         self._dashboard_url: str | None = None
         self._compatibility_attempts: list[dict[str, Any]] = []
+        self._injected_dns_fragment = False
 
     async def _visible(self, selector: str) -> Any | None:
         locator = self._page.locator(selector).first
@@ -457,6 +458,146 @@ class BrowserRouterAdapter:
             }"""
         )
 
+    async def _inject_authenticated_lan_fragment(self) -> bool:
+        """Load the Technicolor LAN fragment like the dashboard's AJAX helper."""
+        timeout_ms = int(max(self.settings.router_timeout, 20.0) * 1000)
+        attempt: dict[str, Any] = {
+            "kind": "authenticated_ajax",
+            "path": "/modals/ethernet-modal.lp?intf=lan",
+        }
+        try:
+            result = await self._page.evaluate(
+                """async ({url, timeoutMs}) => {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    try {
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Accept': 'text/html, */*; q=0.01',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            signal: controller.signal
+                        });
+                        const html = await response.text();
+                        const parsed = new DOMParser().parseFromString(html, 'text/html');
+                        const controls = [...parsed.querySelectorAll('input, select, textarea, button')];
+                        const controlNames = [...new Set(controls
+                            .map(element => element.getAttribute('name') || element.id || null)
+                            .filter(Boolean))].slice(0, 100);
+                        const formActions = [...new Set([...parsed.querySelectorAll('form')]
+                            .map(form => form.getAttribute('action'))
+                            .filter(Boolean))].slice(0, 20);
+                        const selector = [
+                            'input[name="dns_v4_pri"]', 'select[name="dns_v4_pri"]',
+                            'input[name="ipv4_dns_pri"]', 'select[name="ipv4_dns_pri"]',
+                            'input[name="primary_dns"]', 'select[name="primary_dns"]'
+                        ].join(',');
+                        const hasDnsControl = !!parsed.querySelector(selector);
+                        if (response.ok && hasDnsControl) {
+                            document.getElementById('dns-switcher-lan-fragment')?.remove();
+                            const host = document.createElement('section');
+                            host.id = 'dns-switcher-lan-fragment';
+                            host.style.display = 'block';
+                            host.innerHTML = html;
+                            document.body.appendChild(host);
+                        }
+                        return {
+                            status: response.status,
+                            final_url: response.url.split('?', 1)[0],
+                            body_length: html.length,
+                            control_names: controlNames,
+                            form_actions: formActions,
+                            has_dns_control: hasDnsControl
+                        };
+                    } finally {
+                        clearTimeout(timer);
+                    }
+                }""",
+                {
+                    "url": "/modals/ethernet-modal.lp?intf=lan",
+                    "timeoutMs": timeout_ms,
+                },
+            )
+            attempt.update(dict(result))
+            attempt["result"] = "dns_control_found" if result.get("has_dns_control") else "dns_control_absent"
+            self._compatibility_attempts.append(attempt)
+            if not result.get("has_dns_control"):
+                return False
+            known = self._page.locator(
+                '#dns-switcher-lan-fragment input[name="dns_v4_pri"], '
+                '#dns-switcher-lan-fragment select[name="dns_v4_pri"], '
+                '#dns-switcher-lan-fragment input[name="ipv4_dns_pri"], '
+                '#dns-switcher-lan-fragment select[name="ipv4_dns_pri"], '
+                '#dns-switcher-lan-fragment input[name="primary_dns"], '
+                '#dns-switcher-lan-fragment select[name="primary_dns"]'
+            ).first
+            await self._reveal_element(known)
+            self._injected_dns_fragment = await known.is_visible()
+            return self._injected_dns_fragment
+        except Exception as exc:
+            attempt["result"] = "request_error"
+            attempt["error_type"] = type(exc).__name__
+            self._compatibility_attempts.append(attempt)
+            return False
+
+    async def _submit_injected_dns_form(self) -> None:
+        """POST the injected form with the authenticated dashboard CSRF token."""
+        timeout_ms = int(max(self.settings.router_timeout, 20.0) * 1000)
+        try:
+            result = await self._page.evaluate(
+                """async ({timeoutMs}) => {
+                    const host = document.getElementById('dns-switcher-lan-fragment');
+                    const form = host?.querySelector('form');
+                    if (!form) return {ok: false, status: null, reason: 'form_absent'};
+                    const data = new URLSearchParams();
+                    for (const [name, value] of new FormData(form).entries()) {
+                        if (typeof value === 'string') data.append(name, value);
+                    }
+                    const csrf = document.querySelector('meta[name="CSRFtoken"]')?.getAttribute('content');
+                    if (csrf && !data.has('CSRFtoken')) data.append('CSRFtoken', csrf);
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    try {
+                        const response = await fetch(form.action || location.href, {
+                            method: (form.method || 'post').toUpperCase(),
+                            credentials: 'same-origin',
+                            headers: {
+                                'Accept': 'text/html, */*; q=0.01',
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: data.toString(),
+                            signal: controller.signal
+                        });
+                        const html = await response.text();
+                        const parsed = new DOMParser().parseFromString(html, 'text/html');
+                        const hasDnsControl = !!parsed.querySelector(
+                            'input[name="dns_v4_pri"], select[name="dns_v4_pri"], ' +
+                            'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], ' +
+                            'input[name="primary_dns"], select[name="primary_dns"]'
+                        );
+                        if (response.ok && hasDnsControl) host.innerHTML = html;
+                        return {ok: response.ok, status: response.status, has_dns_control: hasDnsControl};
+                    } finally {
+                        clearTimeout(timer);
+                    }
+                }""",
+                {"timeoutMs": timeout_ms},
+            )
+        except Exception as exc:
+            raise RouterError("Errore durante il salvataggio autenticato del DNS") from exc
+        self._compatibility_attempts.append(
+            {
+                "kind": "authenticated_ajax_submit",
+                "status": result.get("status"),
+                "result": "ok" if result.get("ok") else result.get("reason", "http_error"),
+            }
+        )
+        if not result.get("ok"):
+            raise RouterError("Il router ha rifiutato il salvataggio del DNS")
+
     async def _open_direct_dns_page(self) -> bool:
         """Navigate to known authenticated LAN pages when the dashboard modal stalls."""
         paths = (
@@ -613,6 +754,14 @@ class BrowserRouterAdapter:
                 except Exception:
                     pass
 
+        # Replica la richiesta AJAX della dashboard mantenendo sessione e CSRF.
+        # È necessaria sui firmware che restituiscono un frammento incompleto
+        # quando lo stesso URL viene aperto come documento autonomo.
+        if await self._inject_authenticated_lan_fragment():
+            found = await self._find_dns_input()
+            if found is not None:
+                return found
+
         # Some TIM firmware dashboards acknowledge the click but never finish
         # injecting the modal in headless Chromium. The authenticated modal URL
         # is more reliable and keeps the same browser session/cookies.
@@ -704,9 +853,28 @@ class BrowserRouterAdapter:
                 replacement = self._page.locator(
                     f'input[name="{field_name}"]:not([type="hidden"])'
                 ).first
-                await replacement.wait_for(
-                    state="visible", timeout=int(max(self.settings.router_timeout, 5.0) * 1000)
-                )
+                try:
+                    await replacement.wait_for(
+                        state="visible", timeout=int(max(self.settings.router_timeout, 5.0) * 1000)
+                    )
+                except Exception:
+                    if not self._injected_dns_fragment:
+                        raise
+                    # innerHTML non esegue gli script del frammento. Replichiamo
+                    # la trasformazione select -> input di ethernet-modal.js.
+                    await field.evaluate(
+                        """element => {
+                            const input = document.createElement('input');
+                            input.type = 'text';
+                            input.name = element.name;
+                            input.className = element.className;
+                            element.replaceWith(input);
+                        }"""
+                    )
+                    replacement = self._page.locator(
+                        f'#dns-switcher-lan-fragment input[name="{field_name}"]:not([type="hidden"])'
+                    ).first
+                    await self._reveal_element(replacement)
                 field = replacement
                 await field.fill(address)
         else:
@@ -717,6 +885,10 @@ class BrowserRouterAdapter:
         address = validate_ipv4(dns_ip)
         field = await self._set_dns_control_value(await self._dns_input(), address)
         await field.press("Tab")
+        if self._injected_dns_fragment:
+            await self._submit_injected_dns_form()
+            self._applied = True
+            return True
         apply_button = self._page.locator("#save-config").first
         if await apply_button.count():
             try:

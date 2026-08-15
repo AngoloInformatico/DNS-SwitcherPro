@@ -267,6 +267,35 @@ def test_browser_dns_select_switches_to_custom_input() -> None:
     assert replacement.value == "192.168.1.2"
 
 
+class InjectedSubmitAdapter(BrowserRouterAdapter):
+    def __init__(self, field: FakeDnsInput):
+        super().__init__(app_settings(), "admin", "secret")
+        self.field = field
+        self._injected_dns_fragment = True
+        self.submitted = False
+
+    async def _dns_input(self) -> FakeDnsInput:
+        return self.field
+
+    async def _set_dns_control_value(self, field: FakeDnsInput, address: str) -> FakeDnsInput:
+        await field.fill(address)
+        return field
+
+    async def _submit_injected_dns_form(self) -> None:
+        self.submitted = True
+
+
+def test_injected_dns_fragment_uses_authenticated_form_submission() -> None:
+    field = FakeDnsInput()
+    adapter = InjectedSubmitAdapter(field)
+
+    assert asyncio.run(adapter.set_dns("192.168.1.2")) is True
+    assert adapter.submitted is True
+    assert adapter._applied is True
+    assert field.tab_pressed is True
+    assert field.value == "192.168.1.2"
+
+
 def test_connection_payload_validates_draft_address() -> None:
     payload = ConnectionTestPayload(target="pihole", address=" 10.0.0.2 ")
     assert payload.address == "10.0.0.2"
