@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import sys
@@ -12,6 +13,7 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from backend.app.config.settings_manager import AppSettings
+from backend.app.paths import ensure_work_dirs
 from backend.app.security.secret_masking import mask_secrets
 from backend.app.utils.validators import validate_ipv4
 
@@ -357,7 +359,7 @@ class BrowserRouterAdapter:
         except RouterError:
             raise
         except Exception as exc:
-            raise RouterError(mask_secrets(f"Automazione Edge non riuscita: {exc}", (self.password,))) from exc
+            raise RouterError(mask_secrets(f"Automazione browser non riuscita: {exc}", (self.password,))) from exc
 
     async def _find_dns_input(self) -> Any | None:
         # TIM HUB / Technicolor usa a seconda del firmware un input testuale o
@@ -432,6 +434,111 @@ class BrowserRouterAdapter:
             pass
         return False
 
+    @staticmethod
+    async def _reveal_element(locator: Any) -> None:
+        await locator.evaluate(
+            """element => {
+                let current = element;
+                while (current && current !== document.documentElement) {
+                    current.style.setProperty('display', 'block', 'important');
+                    current.style.setProperty('visibility', 'visible', 'important');
+                    current.style.setProperty('opacity', '1', 'important');
+                    current.removeAttribute('hidden');
+                    current = current.parentElement;
+                }
+            }"""
+        )
+
+    async def _open_direct_dns_page(self) -> bool:
+        """Navigate to known authenticated LAN pages when the dashboard modal stalls."""
+        paths = (
+            "/modals/ethernet-modal.lp",
+            "/modals/local-network-modal.lp",
+            "/modals/lan-modal.lp",
+        )
+        timeout = int(max(self.settings.router_timeout, 15.0) * 1000)
+        for path in paths:
+            try:
+                response = await self._page.goto(
+                    urljoin(self.settings.router_url + "/", path.lstrip("/")),
+                    wait_until="commit",
+                    timeout=timeout,
+                )
+                if response is not None and response.status >= 400:
+                    continue
+                await self._page.locator("body").wait_for(state="attached", timeout=timeout)
+                await self._page.wait_for_timeout(500)
+
+                known = self._page.locator(
+                    'input[name="dns_v4_pri"], select[name="dns_v4_pri"], '
+                    'input[name="ipv4_dns_pri"], select[name="ipv4_dns_pri"], '
+                    'input[name="primary_dns"], select[name="primary_dns"]'
+                ).first
+                if not await known.count():
+                    continue
+
+                # A modal fragment opened as a full page can retain Bootstrap's
+                # display:none. Reveal only the DNS control and its ancestors.
+                await self._reveal_element(known)
+                if await known.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _write_compatibility_diagnostic(self) -> str | None:
+        """Persist structural DOM metadata without field values or page text."""
+        try:
+            document = await self._page.evaluate(
+                """() => {
+                    const visible = element => !!(element.offsetWidth || element.offsetHeight ||
+                                                   element.getClientRects().length);
+                    const controls = [...document.querySelectorAll('input, select, textarea, button')]
+                        .slice(0, 250)
+                        .map(element => {
+                            const label = element.id
+                                ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`)
+                                : element.closest('.control-group, .form-group')?.querySelector('label');
+                            return {
+                                tag: element.tagName.toLowerCase(),
+                                type: element.getAttribute('type'),
+                                name: element.getAttribute('name'),
+                                id: element.id || null,
+                                aria_label: element.getAttribute('aria-label'),
+                                placeholder: element.getAttribute('placeholder'),
+                                label: label?.textContent?.trim().slice(0, 120) || null,
+                                visible: visible(element),
+                                disabled: element.disabled === true
+                            };
+                        });
+                    const launchers = [...document.querySelectorAll('[data-remote], [data-id], a[href]')]
+                        .slice(0, 250)
+                        .map(element => ({
+                            tag: element.tagName.toLowerCase(),
+                            id: element.id || null,
+                            data_remote: element.getAttribute('data-remote'),
+                            data_id: element.getAttribute('data-id'),
+                            href: element.getAttribute('href'),
+                            title: element.getAttribute('title'),
+                            aria_label: element.getAttribute('aria-label')
+                        }));
+                    return {
+                        url: `${location.origin}${location.pathname}`,
+                        title: document.title,
+                        controls,
+                        launchers
+                    };
+                }"""
+            )
+            document["frames"] = [
+                str(frame.url).split("?", 1)[0] for frame in self._page.frames
+            ]
+            path = ensure_work_dirs()["logs"] / "router-diagnostic.json"
+            path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+            return str(path)
+        except Exception:
+            return None
+
     async def _wait_for_dns_input(self, timeout: float) -> Any | None:
         deadline = asyncio.get_running_loop().time() + timeout
         while asyncio.get_running_loop().time() < deadline:
@@ -449,7 +556,7 @@ class BrowserRouterAdapter:
         # TIM HUB / Technicolor AGTHP: the DNS field lives in the asynchronous
         # "Rete Locale" modal and only appears after expanding advanced options.
         if await self._open_technicolor_lan_modal():
-            found = await self._wait_for_dns_input(min(self.settings.router_timeout, 8.0))
+            found = await self._wait_for_dns_input(min(self.settings.router_timeout, 5.0))
             if found is not None:
                 return found
             advanced = self._page.get_by_text(
@@ -463,6 +570,14 @@ class BrowserRouterAdapter:
                         return found
                 except Exception:
                     pass
+
+        # Some TIM firmware dashboards acknowledge the click but never finish
+        # injecting the modal in headless Chromium. The authenticated modal URL
+        # is more reliable and keeps the same browser session/cookies.
+        if await self._open_direct_dns_page():
+            found = await self._find_dns_input()
+            if found is not None:
+                return found
 
         for lan_title in (r"rete locale", r"local network"):
             lan = self._page.get_by_text(re.compile(rf"^\s*{lan_title}\s*$", re.I)).first
@@ -512,9 +627,11 @@ class BrowserRouterAdapter:
                     continue
                 if found is not None:
                     return found
+        diagnostic = await self._write_compatibility_diagnostic()
+        detail = " Diagnostico salvato in logs/router-diagnostic.json." if diagnostic else ""
         raise RouterCompatibilityError(
             "Campo DNS IPv4 non individuato nel pannello router. Aprire Local Network/DHCP e riprovare, "
-            "oppure usare la modalità HTTP se il firmware la supporta."
+            f"oppure usare la modalità HTTP se il firmware la supporta.{detail}"
         )
 
     async def get_current_dns(self) -> str | None:
@@ -563,14 +680,20 @@ class BrowserRouterAdapter:
             try:
                 await apply_button.wait_for(state="visible", timeout=3000)
             except Exception:
-                pass
+                try:
+                    await self._reveal_element(apply_button)
+                except Exception:
+                    pass
         if not await apply_button.count() or not await apply_button.is_visible():
             apply_button = self._page.get_by_text(
                 re.compile(r"^\s*(applica|salva|conferma|apply|save|confirm)\s*$", re.I)
             ).first
         if not await apply_button.count() or not await apply_button.is_visible():
-            raise RouterCompatibilityError("Pulsante Applica non individuato dal fallback Edge")
-        await apply_button.click(timeout=3000)
+            raise RouterCompatibilityError("Pulsante Applica non individuato dall'automazione browser")
+        try:
+            await apply_button.click(timeout=3000)
+        except Exception:
+            await apply_button.evaluate("element => element.click()")
         await self._page.wait_for_timeout(900)
         self._applied = True
         return True
