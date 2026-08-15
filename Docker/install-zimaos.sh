@@ -52,8 +52,7 @@ else
   # Alcune installazioni ZimaOS espongono in HOME un config.json di sistema
   # non leggibile dall'utente del terminale. Per immagini pubbliche non serve:
   # usiamo una configurazione locale vuota ed evitiamo il relativo warning.
-  if [ -z "${DOCKER_CONFIG:-}" ] && [ -n "${HOME:-}" ] && \
-     [ -e "$HOME/.docker/config.json" ] && [ ! -r "$HOME/.docker/config.json" ]; then
+  if [ -z "${DOCKER_CONFIG:-}" ]; then
     DOCKER_CONFIG="$SCRIPT_DIR/.docker-cli"
     export DOCKER_CONFIG
     mkdir -p "$DOCKER_CONFIG"
@@ -92,53 +91,33 @@ else
 
   if docker buildx version >/dev/null 2>&1; then
     BUILD_VARIANT=buildx
-  elif docker builder build --help >/dev/null 2>&1; then
-    BUILD_VARIANT=builder
-  else
+  elif docker build --help 2>&1 | \
+       grep -E -e 'Usage:[[:space:]]+docker build([[:space:]]|$)' >/dev/null; then
     BUILD_VARIANT=classic
+  else
+    # Docker 28 può essere installato senza il plugin Buildx. L'immagine CLI
+    # ufficiale include il plugin e usa il daemon ZimaOS tramite il suo socket.
+    BUILD_VARIANT=helper
+    BUILD_HELPER_IMAGE=docker:28-cli
   fi
 
   run_docker_build() {
     case "$BUILD_VARIANT" in
-      buildx) docker buildx build --load "$@" ;;
-      builder) docker builder build "$@" ;;
-      *) docker build "$@" ;;
+      buildx) (cd "$PROJECT_DIR" && docker buildx build --load "$@") ;;
+      classic) (cd "$PROJECT_DIR" && docker build "$@") ;;
+      helper)
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$PROJECT_DIR:/workspace:ro" \
+          -w /workspace \
+          "$BUILD_HELPER_IMAGE" \
+          buildx build --load "$@"
+        ;;
     esac
   }
   echo "Metodo di build: $BUILD_VARIANT"
 
-  # Le forme brevi -f e -t funzionano con i client Docker legacy. Se il client
-  # ZimaOS non espone neppure -f, viene usato temporaneamente il nome Dockerfile
-  # predefinito nella radice del contesto, senza lasciare file nel repository.
-  if run_docker_build --help 2>&1 | \
-     grep -E -e '(^|[[:space:]])-f([,[:space:]]|$)|--file' >/dev/null; then
-    run_docker_build -f "$SCRIPT_DIR/Dockerfile" -t "$IMAGE_NAME" "$PROJECT_DIR"
-  else
-    TEMP_DOCKERFILE="$PROJECT_DIR/Dockerfile"
-    if [ -e "$TEMP_DOCKERFILE" ]; then
-      echo "Errore: esiste già $TEMP_DOCKERFILE; impossibile preparare il fallback di build." >&2
-      exit 1
-    fi
-
-    echo "Il client non accetta -f: secondo tentativo con il Dockerfile predefinito..."
-    cp "$SCRIPT_DIR/Dockerfile" "$TEMP_DOCKERFILE"
-    cleanup_temp_dockerfile() {
-      rm -f "$TEMP_DOCKERFILE"
-    }
-    trap cleanup_temp_dockerfile 0 1 2 15
-
-    if run_docker_build -t "$IMAGE_NAME" "$PROJECT_DIR"; then
-      BUILD_RESULT=0
-    else
-      BUILD_RESULT=$?
-    fi
-
-    cleanup_temp_dockerfile
-    trap - 0 1 2 15
-    if [ "$BUILD_RESULT" -ne 0 ]; then
-      exit "$BUILD_RESULT"
-    fi
-  fi
+  run_docker_build -f Docker/Dockerfile -t "$IMAGE_NAME" .
 
   if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     echo "Sostituzione del container esistente..."
