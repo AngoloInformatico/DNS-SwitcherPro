@@ -29,6 +29,16 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "Creato $ENV_FILE con un token casuale."
 fi
 
+# La home di root è in sola lettura su ZimaOS. Docker Compose e Buildx devono
+# quindi usare una directory di configurazione temporanea e scrivibile. Il
+# suffisso UID mantiene separate le esecuzioni dell'utente SSH e di root.
+if [ -z "${DOCKER_CONFIG:-}" ]; then
+  DOCKER_CONFIG="/tmp/dns-switcher-pro-docker-config-$(id -u)"
+  export DOCKER_CONFIG
+fi
+mkdir -p "$DOCKER_CONFIG"
+chmod 700 "$DOCKER_CONFIG"
+
 # Su ZimaOS l'utente SSH può vedere il comando Docker senza avere accesso al
 # socket del daemon. In quel caso eleviamo soltanto la fase di installazione.
 if DOCKER_INFO_OUTPUT=$(docker info 2>&1); then
@@ -71,16 +81,6 @@ elif command -v docker-compose >/dev/null 2>&1; then
   docker-compose -f "$COMPOSE_FILE" up -d --build
 else
   echo "Docker Compose non è disponibile: avvio tramite Docker standard."
-
-  # Alcune installazioni ZimaOS espongono in HOME un config.json di sistema
-  # non leggibile dall'utente del terminale. Per immagini pubbliche non serve:
-  # usiamo una configurazione locale vuota ed evitiamo il relativo warning.
-  if [ -z "${DOCKER_CONFIG:-}" ]; then
-    DOCKER_CONFIG="$SCRIPT_DIR/.docker-cli"
-    export DOCKER_CONFIG
-    mkdir -p "$DOCKER_CONFIG"
-    chmod 700 "$DOCKER_CONFIG"
-  fi
 
   PORT=$(sed -n 's/^DNS_SWITCHER_PORT=//p' "$ENV_FILE" | tail -n 1)
   TOKEN=$(sed -n 's/^DNS_SWITCHER_SESSION_TOKEN=//p' "$ENV_FILE" | tail -n 1)

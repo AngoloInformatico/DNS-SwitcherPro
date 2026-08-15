@@ -28,6 +28,8 @@ pubblicato da GitHub tramite `curl` o `wget`.
 Al termine mostra l'indirizzo completo della dashboard con il token iniziale.
 Se l'utente SSH non può accedere al socket Docker, lo script si rilancia
 automaticamente tramite `sudo` e può chiedere la password dell'utente ZimaOS.
+La configurazione temporanea di Docker viene collocata in `/tmp`, perché la
+home di root di ZimaOS è in sola lettura.
 
 ## Installazione da una copia locale
 
