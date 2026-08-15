@@ -405,7 +405,8 @@ class BrowserRouterAdapter:
     async def _open_technicolor_lan_modal(self) -> bool:
         """Open the known Technicolor LAN modal without depending on its translation."""
         launchers = self._page.locator(
-            '[data-remote*="ethernet-modal.lp"], '
+            '[data-remote*="ethernet-modal.lp?intf=lan"], '
+            '[data-remote$="ethernet-modal.lp"], '
             '[data-id*="ethernet-modal"], '
             'a[href*="ethernet-modal.lp"]'
         )
@@ -420,13 +421,15 @@ class BrowserRouterAdapter:
             except Exception:
                 continue
 
-        # Nelle dashboard Technicolor la funzione globale tch.loadModal carica
-        # lo stesso pannello anche quando il collegamento della card è nascosto.
+        # La richiesta senza query restituisce solo un piccolo trampoline che
+        # richiama ?intf=lan via JavaScript. In Chromium headless quel secondo
+        # caricamento non è sempre completato: apriamo direttamente l'interfaccia
+        # LAN che contiene DHCP e dns_v4_pri.
         try:
             opened = await self._page.evaluate(
                 """() => {
                     if (!window.tch || typeof window.tch.loadModal !== 'function') return false;
-                    window.tch.loadModal('modals/ethernet-modal.lp');
+                    window.tch.loadModal('/modals/ethernet-modal.lp?intf=lan');
                     return true;
                 }"""
             )
@@ -457,6 +460,7 @@ class BrowserRouterAdapter:
     async def _open_direct_dns_page(self) -> bool:
         """Navigate to known authenticated LAN pages when the dashboard modal stalls."""
         paths = (
+            "/modals/ethernet-modal.lp?intf=lan",
             "/modals/ethernet-modal.lp",
             "/modals/local-network-modal.lp",
             "/modals/lan-modal.lp",
@@ -592,7 +596,9 @@ class BrowserRouterAdapter:
         # TIM HUB / Technicolor AGTHP: the DNS field lives in the asynchronous
         # "Rete Locale" modal and only appears after expanding advanced options.
         if await self._open_technicolor_lan_modal():
-            found = await self._wait_for_dns_input(min(self.settings.router_timeout, 5.0))
+            # La generazione della pagina LAN interroga numerose sezioni del
+            # datamodel del router e sui modelli meno recenti può superare 10 s.
+            found = await self._wait_for_dns_input(max(self.settings.router_timeout, 15.0))
             if found is not None:
                 return found
             advanced = self._page.get_by_text(

@@ -188,8 +188,9 @@ def test_browser_restores_dashboard_after_direct_pages_are_not_found() -> None:
 
     assert found is False
     assert page.url == dashboard_url
+    assert page.visited[0] == "http://192.168.1.1/modals/ethernet-modal.lp?intf=lan"
     assert page.visited[-1] == dashboard_url
-    assert [attempt["status"] for attempt in adapter._compatibility_attempts] == [404, 404, 404]
+    assert [attempt["status"] for attempt in adapter._compatibility_attempts] == [404, 404, 404, 404]
 
 
 class FakeDnsOption:
