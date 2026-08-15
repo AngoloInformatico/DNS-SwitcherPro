@@ -11,7 +11,23 @@ impostazioni e credenziali cifrate in `/DATA/AppData/dns-switcher-pro`.
 - Architettura `amd64`.
 - Almeno 2 GB liberi durante la build; l'immagine include Chromium Playwright.
 
-## Installazione consigliata
+## Installazione consigliata direttamente da GitHub
+
+Non è necessario copiare manualmente il progetto su ZimaOS. Aprire il terminale
+web di ZimaOS ed eseguire un solo comando:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/install-from-github.sh | sh
+```
+
+Il bootstrap scarica o aggiorna il repository GitHub nella cartella
+`/DATA/AppData/dns-switcher-pro-source`, quindi avvia automaticamente
+`install-zimaos.sh`. Se `git` non è disponibile, utilizza l'archivio `tar.gz`
+pubblicato da GitHub tramite `curl` o `wget`.
+
+Al termine mostra l'indirizzo completo della dashboard con il token iniziale.
+
+## Installazione da una copia locale
 
 1. Copiare **l'intero progetto**, non soltanto questa cartella, sullo ZimaOS.
 2. Aprire il terminale di ZimaOS e posizionarsi nella cartella del progetto.
@@ -30,8 +46,9 @@ nel browser e rimosso dalla barra degli indirizzi.
 
 ```sh
 cp Docker/.env.example Docker/.env
-openssl rand -hex 32
-# Inserire il valore ottenuto in DNS_SWITCHER_SESSION_TOKEN dentro Docker/.env
+# Generare un token (lo script automatico non richiede openssl):
+TOKEN="$(tr -d '-' < /proc/sys/kernel/random/uuid)$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+sed -i "s/CAMBIA-QUESTO-TOKEN-CON-ALMENO-32-CARATTERI/$TOKEN/" Docker/.env
 docker compose --env-file Docker/.env -f Docker/docker-compose.yml up -d --build
 ```
 

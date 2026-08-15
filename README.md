@@ -157,7 +157,16 @@ nella cartella [`Docker`](Docker/README.md) e comprende:
 - token per proteggere l'accesso dalla LAN;
 - icona e script di installazione guidata.
 
-Installazione rapida su ZimaOS dopo aver scaricato il progetto:
+Installazione diretta da GitHub nel terminale ZimaOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/install-from-github.sh | sh
+```
+
+Questo comando scarica o aggiorna automaticamente il repository, genera il
+token e avvia la build. Non è necessario copiare manualmente i file.
+
+Installazione da una copia locale già presente su ZimaOS:
 
 ```sh
 cd /DATA/AppData/dns-switcher-pro-source

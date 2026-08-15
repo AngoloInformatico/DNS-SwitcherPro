@@ -11,11 +11,16 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
-  if ! command -v openssl >/dev/null 2>&1; then
-    echo "Errore: openssl è necessario per generare il token iniziale." >&2
+  if [ -r /proc/sys/kernel/random/uuid ]; then
+    TOKEN="$(tr -d '-' < /proc/sys/kernel/random/uuid)$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+  elif [ -r /dev/urandom ] && command -v od >/dev/null 2>&1; then
+    TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+  elif command -v openssl >/dev/null 2>&1; then
+    TOKEN=$(openssl rand -hex 32)
+  else
+    echo "Errore: impossibile generare in modo sicuro il token iniziale." >&2
     exit 1
   fi
-  TOKEN=$(openssl rand -hex 32)
   sed "s/CAMBIA-QUESTO-TOKEN-CON-ALMENO-32-CARATTERI/$TOKEN/" \
     "$SCRIPT_DIR/.env.example" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
