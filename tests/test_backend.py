@@ -243,6 +243,9 @@ class FakeDnsInput:
     async def fill(self, value: str) -> None:
         self.value = value
 
+    async def input_value(self) -> str:
+        return self.value
+
     async def press(self, key: str) -> None:
         self.tab_pressed = key == "Tab"
 
@@ -314,6 +317,42 @@ def test_injected_dns_fragment_uses_authenticated_form_submission() -> None:
     assert adapter._applied is True
     assert field.tab_pressed is True
     assert field.value == "192.168.1.2"
+
+
+class FakeRefreshPage:
+    def __init__(self) -> None:
+        self.removals = 0
+
+    async def evaluate(self, _script: str) -> None:
+        self.removals += 1
+
+    async def wait_for_timeout(self, _timeout: int) -> None:
+        return None
+
+
+class RefreshingConfirmAdapter(BrowserRouterAdapter):
+    def __init__(self):
+        super().__init__(app_settings(apply_timeout=2.0), "admin", "secret")
+        self._page = FakeRefreshPage()
+        self._injected_dns_fragment = True
+        self.refresh_values = ["192.168.1.2", "192.168.1.1"]
+        self.current = FakeDnsInput()
+
+    async def _inject_authenticated_lan_fragment(self) -> bool:
+        self.current.value = self.refresh_values.pop(0)
+        self._injected_dns_fragment = True
+        return True
+
+    async def _find_dns_input(self) -> FakeDnsInput:
+        return self.current
+
+
+def test_confirm_dns_refreshes_injected_fragment_until_router_updates() -> None:
+    adapter = RefreshingConfirmAdapter()
+
+    assert asyncio.run(adapter.confirm_dns("192.168.1.1")) is True
+    assert adapter._page.removals == 2
+    assert adapter.refresh_values == []
 
 
 def test_connection_payload_validates_draft_address() -> None:

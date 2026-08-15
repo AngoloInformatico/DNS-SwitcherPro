@@ -561,6 +561,10 @@ class BrowserRouterAdapter:
                     for (const [name, value] of new FormData(form).entries()) {
                         if (typeof value === 'string') data.append(name, value);
                     }
+                    // Il gestore globale della WebUI aggiunge questo comando
+                    // quando viene premuto #save-config. Nel frammento iniettato
+                    // gli script non vengono eseguiti, quindi lo replichiamo.
+                    if (!data.has('action')) data.append('action', 'SAVE');
                     const csrf = document.querySelector('meta[name="CSRFtoken"]')?.getAttribute('content');
                     if (csrf && !data.has('CSRFtoken')) data.append('CSRFtoken', csrf);
                     const controller = new AbortController();
@@ -928,12 +932,29 @@ class BrowserRouterAdapter:
         deadline = asyncio.get_running_loop().time() + self.settings.apply_timeout
         while asyncio.get_running_loop().time() < deadline:
             try:
-                field = await self._dns_input()
+                if self._injected_dns_fragment:
+                    # Il POST può restituire il vecchio valore mentre il router
+                    # sta applicando DHCP. Ricaricare il frammento è essenziale:
+                    # rileggere lo stesso DOM produrrebbe sempre un dato obsoleto.
+                    await self._page.evaluate(
+                        "document.getElementById('dns-switcher-lan-fragment')?.remove()"
+                    )
+                    self._injected_dns_fragment = False
+                    if not await self._inject_authenticated_lan_fragment():
+                        await self._page.wait_for_timeout(500)
+                        continue
+                    field = await self._find_dns_input()
+                    if field is None:
+                        await self._page.wait_for_timeout(500)
+                        continue
+                else:
+                    field = await self._dns_input()
                 if validate_ipv4(await field.input_value()) == address:
                     return True
             except (ValueError, RouterCompatibilityError):
                 pass
             await self._page.wait_for_timeout(500)
+        await self._write_compatibility_diagnostic()
         return False
 
     async def logout(self) -> None:
