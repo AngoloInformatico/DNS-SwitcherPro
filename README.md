@@ -23,7 +23,11 @@ Entrambe le versioni usano lo stesso backend Python/FastAPI e la stessa webapp
 React + TypeScript. Su Windows l'interfaccia viene ospitata in Microsoft Edge
 WebView2; nel container è accessibile dal browser della rete locale.
 
-> Inserire qui uno screenshot dell'applicazione (`docs/screenshot.png`).
+## Anteprima
+
+![Dashboard di DNS Switcher Pro](assets/Screenshot.png)
+
+![Impostazioni di DNS Switcher Pro](assets/Screenshot2.png)
 
 ## Caratteristiche
 
