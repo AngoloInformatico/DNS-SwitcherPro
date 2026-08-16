@@ -34,6 +34,22 @@ class CredentialsPayload(BaseModel):
     password: str | None = Field(default=None, max_length=512)
 
 
+class AccessLoginPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AccessPasswordSetupPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class AccessPasswordChangePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class SwitchPayload(BaseModel):
     mode: Literal["pihole", "standard"]
 

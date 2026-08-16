@@ -1,6 +1,6 @@
 # DNS Switcher Pro
 
-![Versione](https://img.shields.io/badge/versione-1.1.3-6858e8)
+![Versione](https://img.shields.io/badge/versione-1.1.4-6858e8)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![Docker](https://img.shields.io/badge/Docker-ZimaOS%20%7C%20Linux-2496ED)
 ![Python](https://img.shields.io/badge/Python-%E2%89%A53.12-3776AB)
@@ -29,6 +29,24 @@ WebView2; nel container è accessibile dal browser della rete locale.
 
 ![Impostazioni di DNS Switcher Pro](assets/Screenshot2.png)
 
+![Impostazione della password di DNS Switcher Pro](assets/Screenshot3.png)
+
+## Novità della versione 1.1.4
+
+- Nuova schermata di primo accesso per creare la password dell'applicazione.
+- Login obbligatorio per dashboard, API operative e terminale WebSocket.
+- Nuova pagina **Imposta Password**, accessibile dal pulsante accanto a
+  **Impostazioni**, con cambio password e comando di logout.
+- Password di accesso memorizzata esclusivamente come hash PBKDF2-SHA256 con
+  salt casuale; nessuna password in chiaro nel database o nei log.
+- Sessione locale tramite cookie HttpOnly con durata di 12 ore; il cambio
+  password revoca automaticamente le altre sessioni aperte.
+- Protezione disponibile sia nell'eseguibile Windows sia nel container Docker.
+- `GeneraExe.py` rileva un interprete Python privo delle dipendenze di build e
+  si riavvia automaticamente con Python 3.13 o 3.12 già configurato.
+- Nuovo script di disinstallazione per Docker/ZimaOS, con conservazione dei
+  dati predefinita e rimozione completa solo tramite `--purge`.
+
 ## Caratteristiche
 
 - Due pulsanti grandi per attivare DNS Pi-hole o DNS Standard.
@@ -41,7 +59,10 @@ WebView2; nel container è accessibile dal browser della rete locale.
 - Impostazioni IPv4, protocollo/porta, timeout, compatibilità router e tema.
 - Credenziali in Windows Credential Manager oppure cifrate nel volume Docker.
 - Database e log in `Codex_Work/` su Windows o nel volume persistente Docker.
-- Accesso Docker protetto da token e dati persistenti separati dall'immagine.
+- Pagina di login con password locale per le versioni Windows e Docker.
+- Cambio password dalla pagina **Imposta Password** e sessioni HttpOnly.
+- Logout esplicito e revoca delle altre sessioni dopo il cambio password.
+- Script GitHub per la disinstallazione sicura del container Docker/ZimaOS.
 
 ## Requisiti
 
@@ -86,7 +107,13 @@ L'URL del frontend deve includere `?token=development-only-token`.
 
 ## Primo avvio
 
-Aprire Impostazioni e confermare gli indirizzi del proprio impianto. I valori
+Al primo avvio viene mostrata la pagina **Crea la password**. Scegliere una
+password di almeno 8 caratteri: ogni installazione Windows o Docker conserva
+la propria password locale. Agli avvii successivi verrà mostrata la pagina di
+login. La password può essere cambiata con **Imposta Password**, accanto al
+pulsante Impostazioni.
+
+Aprire quindi Impostazioni e confermare gli indirizzi del proprio impianto. I valori
 predefiniti di esempio sono `192.168.1.1` per router/DNS standard e `192.168.1.2`
 per Pi-hole: sostituirli se la rete usa indirizzi diversi. Salvare username e
 password; la password non viene mai stampata, serializzata in chiaro o inserita
@@ -133,16 +160,19 @@ I test di rete devono usare mock e non contattano router reali.
 python GeneraExe.py
 ```
 
-Lo script controlla Windows/Python/Node, compila Vite, esegue i test essenziali,
-usa `DNSSwitcherPro.spec` e produce la cartella portabile e il relativo ZIP:
+Lo script controlla Windows, Python, Node e tutti i moduli di build. Se viene
+aperto con un interprete incompleto, per esempio un Python 3.14 senza `pytest`,
+cerca un Python 3.13/3.12 già configurato e si riavvia automaticamente. Compila
+Vite, esegue i test, usa `DNSSwitcherPro.spec` e produce la cartella portabile e
+il relativo ZIP:
 
 ```text
 dist/DNSSwitcherPro/DNSSwitcherPro.exe
-dist/DNSSwitcherPro-Portable-1.1.3.zip
+dist/DNSSwitcherPro-Portable-1.1.4.zip
 ```
 
 La cartella portabile non include `Codex_Work`, `.env`, database, log o credenziali.
-Estrarre `dist/DNSSwitcherPro-Portable-1.1.3.zip` e avviare
+Estrarre `dist/DNSSwitcherPro-Portable-1.1.4.zip` e avviare
 `DNSSwitcherPro/DNSSwitcherPro.exe` senza separarlo dalla cartella `_internal`.
 
 ## Container Docker per ZimaOS e server Linux
@@ -154,10 +184,12 @@ nella cartella [`Docker`](Docker/README.md) e comprende:
 - Compose con metadati `x-casaos` per ZimaOS;
 - Chromium Playwright per automatizzare il pannello TIM HUB;
 - volume persistente per database, log e credenziali cifrate;
-- token per proteggere l'accesso dalla LAN;
-- icona e script di installazione guidata.
+- token tecnico di bootstrap e login con password per proteggere l'accesso dalla LAN;
+- icona e script guidati di installazione e disinstallazione.
 
-Installazione diretta da GitHub nel terminale ZimaOS:
+### Installazione diretta da GitHub
+
+Nel terminale ZimaOS eseguire:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/install-from-github.sh | sh
@@ -165,6 +197,24 @@ curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/m
 
 Questo comando scarica o aggiorna automaticamente il repository, genera il
 token e avvia la build. Non è necessario copiare manualmente i file.
+
+### Disinstallazione da GitHub
+
+Per rimuovere container, immagine e rete Docker conservando configurazione,
+password e log, eseguire:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/uninstall-zimaos.sh | sh
+```
+
+Per eliminare definitivamente anche dati persistenti e sorgenti scaricati:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/uninstall-zimaos.sh | sh -s -- --purge
+```
+
+> **Attenzione:** `--purge` elimina impostazioni, password, database e log e
+> non consente il recupero dei dati.
 
 Installazione da una copia locale già presente su ZimaOS:
 
@@ -199,16 +249,21 @@ Per installazione, aggiornamenti, log e gestione del token consultare la
 - **Pi-hole non risponde:** controllare che il servizio ascolti su TCP/UDP 53.
 - **DNS non cambia subito:** attendere il rinnovo DHCP; alcuni client mantengono il lease.
 - **WebView2 mancante:** installare il Microsoft Edge WebView2 Runtime.
+- **`pytest` non trovato durante la build EXE:** usare il nuovo `GeneraExe.py`,
+  che seleziona automaticamente l'interprete Python completo; se nessuno è
+  disponibile mostra il comando esatto per installare i moduli mancanti.
 
 ## Sicurezza
 
-La versione Windows ascolta solo su `127.0.0.1` e usa un token di sessione
-temporaneo. La versione Docker espone la dashboard sulla LAN e richiede il token
-generato durante l'installazione; non deve essere pubblicata direttamente su
-Internet. Nel container la password del router viene cifrata nel volume
-persistente. Cookie, token e password non entrano nello storico e i log filtrano
-i segreti noti. Non usare questa app per modificare firewall, port forwarding o
-IPv6.
+La versione Windows ascolta solo su `127.0.0.1` e usa un token tecnico temporaneo.
+La versione Docker espone la dashboard sulla LAN e richiede il token generato
+durante l'installazione. In entrambe le versioni le API operative e il WebSocket
+richiedono inoltre il login: la password di accesso è salvata soltanto come hash
+PBKDF2-SHA256 con salt casuale e la sessione usa un cookie HttpOnly con scadenza
+di 12 ore. Il cambio password revoca le altre sessioni. Non pubblicare la
+dashboard direttamente su Internet. Nel container la password del router viene
+cifrata nel volume persistente. Cookie, token e password non entrano nello
+storico e i log filtrano i segreti noti.
 
 ## Licenza
 

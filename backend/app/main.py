@@ -11,16 +11,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.app import __version__
-from backend.app.api import routes_dns, routes_settings, routes_status, websocket_terminal
+from backend.app.api import routes_auth, routes_dns, routes_settings, routes_status, websocket_terminal
 from backend.app.config.settings_manager import SettingsManager
 from backend.app.database.connection import Database
 from backend.app.database.repositories import (
+    AccessPasswordRepository,
     CredentialsRepository,
     HistoryRepository,
     SettingsRepository,
 )
 from backend.app.paths import ensure_work_dirs, frontend_dist
 from backend.app.security.credential_store import CredentialStore
+from backend.app.security.access_auth import AccessPasswordManager, AccessSessionStore
 from backend.app.services.events import EventBroker
 from backend.app.services.operation_manager import OperationManager
 
@@ -43,9 +45,12 @@ def create_app(session_token: str | None = None, development: bool = False) -> F
     database.initialize()
     settings_repository = SettingsRepository(database)
     credentials_repository = CredentialsRepository(database)
+    access_password_repository = AccessPasswordRepository(database)
     history = HistoryRepository(database)
     settings = SettingsManager(settings_repository)
     credentials = CredentialStore(credentials_repository)
+    access_password = AccessPasswordManager(access_password_repository)
+    access_sessions = AccessSessionStore()
     broker = EventBroker()
     operations = OperationManager(settings, credentials, history, broker)
 
@@ -59,6 +64,8 @@ def create_app(session_token: str | None = None, development: bool = False) -> F
     app.state.database = database
     app.state.settings = settings
     app.state.credentials = credentials
+    app.state.access_password = access_password
+    app.state.access_sessions = access_sessions
     app.state.history = history
     app.state.broker = broker
     app.state.operations = operations
@@ -73,11 +80,12 @@ def create_app(session_token: str | None = None, development: bool = False) -> F
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-            allow_credentials=False,
+            allow_credentials=True,
             allow_methods=["GET", "POST", "PUT"],
             allow_headers=["Content-Type", "X-Session-Token"],
         )
 
+    app.include_router(routes_auth.router)
     app.include_router(routes_status.router)
     app.include_router(routes_settings.router)
     app.include_router(routes_dns.router)

@@ -1,14 +1,14 @@
-import secrets
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from backend.app.security.access_auth import AccessSessionStore
 
 router = APIRouter()
 
 
 @router.websocket("/ws/terminal")
 async def terminal(websocket: WebSocket) -> None:
-    token = websocket.query_params.get("token", "")
-    if not secrets.compare_digest(token, websocket.app.state.session_token):
+    token = websocket.cookies.get(AccessSessionStore.COOKIE_NAME)
+    if not websocket.app.state.access_sessions.is_valid(token):
         await websocket.close(code=4401)
         return
     await websocket.accept()
@@ -20,4 +20,3 @@ async def terminal(websocket: WebSocket) -> None:
         pass
     finally:
         websocket.app.state.broker.unsubscribe(queue)
-

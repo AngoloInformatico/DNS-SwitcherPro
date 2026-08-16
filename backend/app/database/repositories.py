@@ -52,6 +52,31 @@ class CredentialsRepository:
             )
 
 
+class AccessPasswordRepository:
+    def __init__(self, database: Database):
+        self.database = database
+
+    def get(self) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash, salt, iterations FROM access_password WHERE id=1"
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save(self, password_hash: str, salt: str, iterations: int) -> None:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute(
+                """INSERT INTO access_password(
+                    id, password_hash, salt, iterations, created_at, updated_at
+                ) VALUES(1, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET password_hash=excluded.password_hash,
+                    salt=excluded.salt, iterations=excluded.iterations,
+                    updated_at=excluded.updated_at""",
+                (password_hash, salt, iterations, now, now),
+            )
+
+
 class HistoryRepository:
     def __init__(self, database: Database):
         self.database = database
@@ -77,4 +102,3 @@ class HistoryRepository:
                 "SELECT * FROM operation_history ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(row) for row in rows]
-

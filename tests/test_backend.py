@@ -10,7 +10,8 @@ from backend.app.api.schemas import ConnectionTestPayload
 from backend.app.config.settings_manager import AppSettings
 from backend.app.config.settings_manager import SettingsManager
 from backend.app.database.connection import Database
-from backend.app.database.repositories import SettingsRepository
+from backend.app.database.repositories import AccessPasswordRepository, SettingsRepository
+from backend.app.security.access_auth import AccessPasswordManager
 from backend.app.services.router_client import (
     BrowserRouterAdapter,
     HttpRouterAdapter,
@@ -48,7 +49,34 @@ def test_database_schema_is_local(tmp_path: Path) -> None:
     database.initialize()
     with database.connect() as connection:
         names = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"settings", "router_credentials", "operation_history"} <= names
+    assert {"settings", "router_credentials", "access_password", "operation_history"} <= names
+
+
+def test_access_password_is_hashed_and_can_be_changed(tmp_path: Path) -> None:
+    database = Database(tmp_path / "dns.db")
+    database.initialize()
+    repository = AccessPasswordRepository(database)
+    manager = AccessPasswordManager(repository)
+
+    manager.set_initial("password-iniziale")
+
+    record = repository.get()
+    assert record is not None
+    assert "password-iniziale" not in str(record)
+    assert manager.verify("password-iniziale") is True
+    assert manager.verify("password-errata") is False
+    manager.change("password-iniziale", "password-nuova")
+    assert manager.verify("password-iniziale") is False
+    assert manager.verify("password-nuova") is True
+
+
+def test_access_password_rejects_short_values(tmp_path: Path) -> None:
+    database = Database(tmp_path / "dns.db")
+    database.initialize()
+    manager = AccessPasswordManager(AccessPasswordRepository(database))
+
+    with pytest.raises(ValueError, match="almeno 8"):
+        manager.set_initial("corta")
 
 
 def app_settings(**overrides: object) -> AppSettings:
@@ -524,3 +552,54 @@ def test_container_accepts_lan_host_with_valid_token(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_access_login_protects_application_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "test-bootstrap-token-with-more-than-32-characters"
+    monkeypatch.setenv("DNS_SWITCHER_WORK_DIR", str(tmp_path / "auth-data"))
+    from backend.app.main import create_app
+
+    app = create_app(session_token=token)
+    headers = {"X-Session-Token": token}
+
+    async def exercise_login() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            initial = await client.get("/api/auth/status", headers=headers)
+            assert initial.json() == {"password_configured": False, "authenticated": False}
+
+            protected = await client.get("/api/settings", headers=headers)
+            assert protected.status_code == 401
+
+            setup = await client.post(
+                "/api/auth/setup", headers=headers, json={"new_password": "password-iniziale"}
+            )
+            assert setup.status_code == 200
+            assert setup.json()["authenticated"] is True
+            assert await _status_code(client, "/api/settings", headers) == 200
+
+            changed = await client.put(
+                "/api/auth/password",
+                headers=headers,
+                json={"current_password": "password-iniziale", "new_password": "password-nuova"},
+            )
+            assert changed.status_code == 200
+
+            logged_out = await client.post("/api/auth/logout", headers=headers)
+            assert logged_out.status_code == 200
+            assert await _status_code(client, "/api/settings", headers) == 401
+
+            wrong = await client.post(
+                "/api/auth/login", headers=headers, json={"password": "password-iniziale"}
+            )
+            assert wrong.status_code == 401
+            valid = await client.post(
+                "/api/auth/login", headers=headers, json={"password": "password-nuova"}
+            )
+            assert valid.status_code == 200
+            assert await _status_code(client, "/api/settings", headers) == 200
+
+    async def _status_code(client: httpx.AsyncClient, path: str, request_headers: dict[str, str]) -> int:
+        return (await client.get(path, headers=request_headers)).status_code
+
+    asyncio.run(exercise_login())

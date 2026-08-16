@@ -4,6 +4,11 @@ Questa cartella contiene la variante container dell'applicazione. Il container
 espone la dashboard web, usa Chromium headless per il pannello TIM HUB e salva
 impostazioni e credenziali cifrate in `/DATA/AppData/dns-switcher-pro`.
 
+La versione 1.1.4 aggiunge il primo accesso con creazione password, il login
+obbligatorio, la pagina **Imposta Password**, il logout e la revoca delle altre
+sessioni dopo il cambio password. Le API operative e il terminale WebSocket
+richiedono una sessione autenticata.
+
 ## Requisiti
 
 - ZimaOS con Docker Compose disponibile.
@@ -31,6 +36,27 @@ automaticamente tramite `sudo` e può chiedere la password dell'utente ZimaOS.
 La configurazione temporanea di Docker viene collocata in `/tmp`, perché la
 home di root di ZimaOS è in sola lettura.
 
+## Disinstallazione diretta da GitHub
+
+Per rimuovere container, immagine e rete Docker mantenendo dati, configurazione,
+password e log per una futura reinstallazione:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/uninstall-zimaos.sh | sh
+```
+
+I dati rimangono in `/DATA/AppData/dns-switcher-pro` e i sorgenti in
+`/DATA/AppData/dns-switcher-pro-source`.
+
+Per eliminare definitivamente anche dati persistenti e sorgenti:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AngoloInformatico/DNS-SwitcherPro/main/Docker/uninstall-zimaos.sh | sh -s -- --purge
+```
+
+> **Attenzione:** l'opzione `--purge` elimina impostazioni, password, database
+> e log. Questa operazione non è reversibile.
+
 ## Installazione da una copia locale
 
 1. Copiare **l'intero progetto**, non soltanto questa cartella, sullo ZimaOS.
@@ -43,7 +69,9 @@ home di root di ZimaOS è in sola lettura.
 
 Lo script crea `Docker/.env`, genera un token casuale, compila l'immagine e
 mostra l'indirizzo completo da aprire. Al primo accesso il token viene salvato
-nel browser e rimosso dalla barra degli indirizzi.
+nel browser e rimosso dalla barra degli indirizzi. Subito dopo viene richiesto
+di creare la password di accesso, che dovrà essere inserita alle aperture
+successive della dashboard.
 
 Non è obbligatorio avere Docker Compose: se ZimaOS espone soltanto il comando
 `docker`, lo script costruisce e avvia automaticamente il container tramite
@@ -83,12 +111,19 @@ Il percorso predefinito è:
 Contiene database, log e password router cifrata. Per cambiare percorso,
 modificare `DNS_SWITCHER_DATA_PATH` in `Docker/.env`.
 
+La password di accesso alla dashboard è conservata nello stesso database solo
+come hash PBKDF2-SHA256 con salt casuale. Può essere modificata dalla pagina
+**Imposta Password**, raggiungibile dal pulsante accanto a **Impostazioni**. Il
+cambio password revoca le altre sessioni aperte.
+
 Il token è anche la chiave usata per derivare la cifratura. Se viene cambiato,
 la vecchia password non sarà più leggibile e dovrà essere reinserita dalla
 pagina Impostazioni.
 
-La dashboard usa HTTP e deve rimanere accessibile soltanto dalla LAN fidata. Non
-pubblicare la porta 8765 su Internet e non condividere il token.
+La dashboard usa HTTP e deve rimanere accessibile soltanto dalla LAN fidata. Il
+token tecnico consente solo di raggiungere il flusso di login; le API operative
+richiedono anche una sessione autenticata. Non pubblicare la porta 8765 su
+Internet e non condividere il token o la password di accesso.
 
 ## Comandi utili
 
@@ -107,6 +142,12 @@ docker compose -f docker-compose.yml up -d --build
 
 # Arresto senza cancellare i dati
 docker compose -f docker-compose.yml down
+
+# Disinstallazione locale mantenendo dati e sorgenti
+sh uninstall-zimaos.sh
+
+# Disinstallazione locale completa e irreversibile
+sh uninstall-zimaos.sh --purge
 ```
 
 Se ZimaOS espone il comando storico, sostituire `docker compose` con
