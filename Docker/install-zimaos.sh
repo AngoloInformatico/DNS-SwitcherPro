@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 ENV_FILE="$SCRIPT_DIR/.env"
-IMAGE_NAME=dns-switcher-pro:1.1.4-zimaos
+IMAGE_NAME=dns-switcher-pro:1.1.5-zimaos
 CONTAINER_NAME=dns-switcher-pro
 
 if ! command -v docker >/dev/null 2>&1; then

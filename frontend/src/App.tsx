@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Activity, AlertTriangle, Check, CheckCircle2, ChevronRight, CircleStop, Copy, Database, Eye, EyeOff, Globe2, KeyRound, Loader2, LockKeyhole, LogOut, Network, Play, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, Trash2, Wifi, X, Zap } from 'lucide-react'
+import { Activity, AlertTriangle, Check, CheckCircle2, ChevronRight, CircleStop, Copy, Database, ExternalLink, Eye, EyeOff, Globe2, KeyRound, Loader2, LockKeyhole, LogOut, Network, Play, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, Trash2, Wifi, X, Zap } from 'lucide-react'
 
 type Mode = 'pihole' | 'standard' | 'unknown'
 type Theme = 'light' | 'dark' | 'system'
@@ -125,6 +125,13 @@ export default function App() {
   const copyLogs = async () => { await navigator.clipboard?.writeText(logs.map(item => `[${formatTime(item.timestamp)}] ${item.message}`).join('\n')); setNotice({ kind: 'success', text: 'Log copiato negli appunti' }) }
   const saveLogs = () => { const blob = new Blob([logs.map(item => `[${formatTime(item.timestamp)}] ${item.message}`).join('\n')], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'dns-switcher-log.txt'; link.click(); URL.revokeObjectURL(link.href) }
   const logout = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined); setLogs([]); setView('dashboard'); setAuthView('login') }
+  const openPihole = () => {
+    const link = document.createElement('a')
+    link.href = `http://${settings.pihole_ip}/admin/`
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    link.click()
+  }
 
   if (authView === 'checking') return <AuthLoading />
   if (authView === 'invalid-link') return <InvalidLink />
@@ -134,7 +141,7 @@ export default function App() {
   const modeTone = status.active_mode === 'pihole' ? 'violet' : status.active_mode === 'standard' ? 'blue' : 'neutral'
 
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><img className="brand-mark" src="/icon.svg" alt=""/><div><div className="brand-name">DNS Switcher <span>Pro</span></div><div className="eyebrow">LOCAL NETWORK CONTROL · v1.1.4</div></div></div><div className="top-actions"><div className="connection-pill"><span className="pulse-dot"/> Accesso protetto</div><button className={`password-button ${view === 'password' ? 'is-active' : ''}`} onClick={() => setView(view === 'password' ? 'dashboard' : 'password')}><KeyRound size={17}/><span>{view === 'password' ? 'Dashboard' : 'Imposta Password'}</span></button><button className={`settings-button ${view === 'settings' ? 'is-active' : ''}`} onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}><Settings2 size={17}/><span>{view === 'settings' ? 'Dashboard' : 'Impostazioni'}</span></button></div></header>
+    <header className="topbar"><div className="brand"><img className="brand-mark" src="/icon.svg" alt=""/><div><div className="brand-name">DNS Switcher <span>Pro</span></div><div className="eyebrow">LOCAL NETWORK CONTROL · v1.1.5</div></div></div><div className="top-actions"><div className="connection-pill"><span className="pulse-dot"/> Accesso protetto</div><button className={`password-button ${view === 'password' ? 'is-active' : ''}`} onClick={() => setView(view === 'password' ? 'dashboard' : 'password')}><KeyRound size={17}/><span>{view === 'password' ? 'Dashboard' : 'Imposta Password'}</span></button><button className="pihole-button" onClick={openPihole} title={`Apri Pi-hole · ${settings.pihole_ip}`} aria-label={`Apri Pi-hole all'indirizzo ${settings.pihole_ip}`}><Database size={17}/><span>Pi-hole</span><ExternalLink size={13}/></button><button className={`settings-button ${view === 'settings' ? 'is-active' : ''}`} onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}><Settings2 size={17}/><span>{view === 'settings' ? 'Dashboard' : 'Impostazioni'}</span></button></div></header>
     <main className="content">
       {notice && <div className={`notice notice-${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'} aria-live="polite"><span>{notice.kind === 'success' ? <CheckCircle2 size={17}/> : notice.kind === 'error' ? <AlertTriangle size={17}/> : <Activity size={17}/>}</span><strong>{notice.text}</strong><button aria-label="Chiudi messaggio" onClick={() => setNotice(null)}><X size={15}/></button></div>}
       <AnimatePresence mode="wait">{view === 'dashboard' ? <motion.div key="dashboard" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
@@ -148,7 +155,7 @@ export default function App() {
   </div>
 }
 
-function BrandBlock() { return <div className="auth-brand"><img src="/icon.svg" alt=""/><div><div className="brand-name">DNS Switcher <span>Pro</span></div><div className="eyebrow">LOCAL NETWORK CONTROL · v1.1.4</div></div></div> }
+function BrandBlock() { return <div className="auth-brand"><img src="/icon.svg" alt=""/><div><div className="brand-name">DNS Switcher <span>Pro</span></div><div className="eyebrow">LOCAL NETWORK CONTROL · v1.1.5</div></div></div> }
 
 function AuthLoading() { return <div className="auth-shell"><BrandBlock/><div className="auth-loading"><Loader2 className="spin" size={24}/><span>Verifica accesso…</span></div></div> }
 

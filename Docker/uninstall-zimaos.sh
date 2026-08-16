@@ -2,7 +2,7 @@
 set -eu
 
 CONTAINER_NAME=dns-switcher-pro
-DEFAULT_IMAGE=dns-switcher-pro:1.1.4-zimaos
+DEFAULT_IMAGE=dns-switcher-pro:1.1.5-zimaos
 INSTALL_DIR=${DNS_SWITCHER_SOURCE_DIR:-/DATA/AppData/dns-switcher-pro-source}
 DATA_DIR=${DNS_SWITCHER_DATA_PATH:-}
 PURGE=0

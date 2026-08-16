@@ -16,6 +16,6 @@ DEFAULT_SETTINGS: dict[str, str] = {
 }
 
 APP_NAME = "DNS Switcher Pro"
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.5"
 CREDENTIAL_SERVICE = "DNS-Switcher-Pro"
 CREDENTIAL_KEY = "router-admin"

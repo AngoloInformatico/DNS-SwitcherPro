@@ -4,10 +4,12 @@ Questa cartella contiene la variante container dell'applicazione. Il container
 espone la dashboard web, usa Chromium headless per il pannello TIM HUB e salva
 impostazioni e credenziali cifrate in `/DATA/AppData/dns-switcher-pro`.
 
-La versione 1.1.4 aggiunge il primo accesso con creazione password, il login
+La versione 1.1.5 aggiunge il primo accesso con creazione password, il login
 obbligatorio, la pagina **Imposta Password**, il logout e la revoca delle altre
 sessioni dopo il cambio password. Le API operative e il terminale WebSocket
-richiedono una sessione autenticata.
+richiedono una sessione autenticata. Il pulsante **Pi-hole**, accanto a
+**Impostazioni**, apre il pannello `http://IP-PIHOLE/admin/` in una nuova scheda
+usando l'indirizzo configurato nell'app.
 
 ## Requisiti
 

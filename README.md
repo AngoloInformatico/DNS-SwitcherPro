@@ -1,6 +1,6 @@
 # DNS Switcher Pro
 
-![Versione](https://img.shields.io/badge/versione-1.1.4-6858e8)
+![Versione](https://img.shields.io/badge/versione-1.1.5-6858e8)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![Docker](https://img.shields.io/badge/Docker-ZimaOS%20%7C%20Linux-2496ED)
 ![Python](https://img.shields.io/badge/Python-%E2%89%A53.12-3776AB)
@@ -31,7 +31,7 @@ WebView2; nel container è accessibile dal browser della rete locale.
 
 ![Impostazione della password di DNS Switcher Pro](assets/Screenshot3.png)
 
-## Novità della versione 1.1.4
+## Novità della versione 1.1.5
 
 - Nuova schermata di primo accesso per creare la password dell'applicazione.
 - Login obbligatorio per dashboard, API operative e terminale WebSocket.
@@ -42,6 +42,9 @@ WebView2; nel container è accessibile dal browser della rete locale.
 - Sessione locale tramite cookie HttpOnly con durata di 12 ore; il cambio
   password revoca automaticamente le altre sessioni aperte.
 - Protezione disponibile sia nell'eseguibile Windows sia nel container Docker.
+- Nuovo pulsante **Pi-hole** accanto a **Impostazioni**: apre
+  `http://IP-PIHOLE/admin/` nel browser predefinito dall'EXE o in una nuova
+  scheda dalla versione Docker.
 - `GeneraExe.py` rileva un interprete Python privo delle dipendenze di build e
   si riavvia automaticamente con Python 3.13 o 3.12 già configurato.
 - Nuovo script di disinstallazione per Docker/ZimaOS, con conservazione dei
@@ -63,6 +66,8 @@ WebView2; nel container è accessibile dal browser della rete locale.
 - Cambio password dalla pagina **Imposta Password** e sessioni HttpOnly.
 - Logout esplicito e revoca delle altre sessioni dopo il cambio password.
 - Script GitHub per la disinstallazione sicura del container Docker/ZimaOS.
+- Apertura diretta del pannello Pi-hole usando l'indirizzo salvato nelle
+  impostazioni dell'app.
 
 ## Requisiti
 
@@ -168,11 +173,11 @@ il relativo ZIP:
 
 ```text
 dist/DNSSwitcherPro/DNSSwitcherPro.exe
-dist/DNSSwitcherPro-Portable-1.1.4.zip
+dist/DNSSwitcherPro-Portable-1.1.5.zip
 ```
 
 La cartella portabile non include `Codex_Work`, `.env`, database, log o credenziali.
-Estrarre `dist/DNSSwitcherPro-Portable-1.1.4.zip` e avviare
+Estrarre `dist/DNSSwitcherPro-Portable-1.1.5.zip` e avviare
 `DNSSwitcherPro/DNSSwitcherPro.exe` senza separarlo dalla cartella `_internal`.
 
 ## Container Docker per ZimaOS e server Linux

@@ -2,7 +2,7 @@ name: dns-switcher-pro
 
 services:
   dns-switcher-pro:
-    image: dns-switcher-pro:1.1.4-zimaos
+    image: dns-switcher-pro:1.1.5-zimaos
     build:
       context: ..
       dockerfile: Docker/Dockerfile
@@ -58,7 +58,7 @@ x-casaos:
   category: Network
   architectures:
     - amd64
-  version: "1.1.4"
+  version: "1.1.5"
   update_at: "2026-08-16"
   tips:
     before_install:

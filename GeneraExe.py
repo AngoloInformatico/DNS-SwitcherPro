@@ -119,7 +119,7 @@ def main() -> int:
         exe = ROOT / "dist" / "DNSSwitcherPro" / "DNSSwitcherPro.exe"
         if not exe.exists():
             raise RuntimeError("PyInstaller non ha prodotto dist/DNSSwitcherPro/DNSSwitcherPro.exe")
-        archive_base = ROOT / "dist" / "DNSSwitcherPro-Portable-1.1.4"
+        archive_base = ROOT / "dist" / "DNSSwitcherPro-Portable-1.1.5"
         archive = Path(shutil.make_archive(str(archive_base), "zip", exe.parent.parent, exe.parent.name))
         print(f"Build completata: {exe}")
         print(f"Dimensione: {exe.stat().st_size / 1024 / 1024:.2f} MB")
